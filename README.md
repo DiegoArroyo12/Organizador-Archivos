@@ -53,3 +53,10 @@ python Renombramiento.py
     - El mismo video pero re-codificado (ej. uno en `.mov` y otro en `.mp4`).
     - El mismo video pero con una calidad diferente (ej. uno en 1080p y otro en 4K).
     - Videos que son casi idénticos (ej. uno con 2 segundos extra al final).
+
+# Clasificador Manual
+Progama para visualizar y ordenar imágenes y videos de una carpeta seleccionada a un grupo de carpetas.
+
+```
+pip install pygame moviepy
+```
