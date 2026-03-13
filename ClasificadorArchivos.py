@@ -59,6 +59,13 @@ class Clasificador:
         self.carpetasDestino = {}
         self.imagenValida = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
         self.videoValido = ('.mp4', '.avi', '.mov', '.mkv')
+        self.historial_movimientos = []
+        self.MAX_HISTORIAL = 50
+        self.archivos_temp_activos = set()
+        self.temp_cleanup_look = threading.Lock()
+        self.limpiar_archivos_temp_antiguos()
+        
+        self.ventana.protocol("WM_DELETE_WINDOW", self.cerrar_aplicacion)
         
         self.setup_ui()
         self.ventana.mainloop()
@@ -83,6 +90,11 @@ class Clasificador:
         Label(self.panel_izquierdo, text="ACCIONES", bg=COLOR_SIDEBAR, fg=COLOR_TEXT_SEC, font=("Arial", 8, "bold")).pack(pady=(5, 5), anchor="w", padx=15)
         self.btn_crear_moderno(self.panel_izquierdo, "Nueva Carpeta", self.nuevaCarpetaPopup, "#4f545c", ruta_imagen="iconos/agregarIcono.png")
         self.btn_crear_moderno(self.panel_izquierdo, "Herramientas", self.abrir_menu_herramientas, COLOR_WARNING, ruta_imagen="iconos/herramientasIcono.png")
+        
+        self.btn_deshacer = self.btn_crear_moderno(self.panel_izquierdo, "Deshacer Último", self.deshacer_ultimo_movimiento, '#ed4245', ruta_imagen="iconos/deshacer.png")
+        self.btn_deshacer.config(state='disabled', bg='#4f545c')
+        self.lbl_historial = Label(self.panel_izquierdo, text="0 movimientos", bg=COLOR_SIDEBAR, fg="#8e8e93", font=("Segoe UI", 8))
+        self.lbl_historial.pack(anchor="w", padx=15, pady=(0,5))
 
         self.panel_derecho = Frame(self.ventana, bg=COLOR_SIDEBAR, width=280)
         self.panel_derecho.pack(side='right', fill='y')
@@ -431,14 +443,14 @@ class Clasificador:
                 return
             temp_ref = f"temp_ref_{uuid.uuid4().hex}.jpg"
             cv2.imwrite(temp_ref, frame)
+            self.registrar_archivo_temp(temp_ref)
         except Exception as e:
             messagebox.showerror("Error", str(e))
             return
 
         def al_recibir_coords(coords):
-            if os.path.exists(temp_ref):
-                try: os.remove(temp_ref)
-                except: pass
+            self.eliminar_archivo_temp(temp_ref)
+            
             if not coords: return
             x1, y1, x2, y2 = coords
             
@@ -475,6 +487,7 @@ class Clasificador:
         if not self.ia: return
         
         img_para_analisis = image_path
+        temp_frame_path = None
         es_video = False
         
         if image_path.lower().endswith(self.videoValido):
@@ -487,24 +500,27 @@ class Clasificador:
                 if ret:
                     temp_frame_path = f"temp_frame_{uuid.uuid4().hex}.jpg"
                     cv2.imwrite(temp_frame_path, frame)
+                    self.registrar_archivo_temp(temp_frame_path)
                     img_para_analisis = temp_frame_path
                     es_video = True
                 else: return
             except: return
 
+        # Verificar si el job sigue siendo válido
         if job_id != self.current_job_id: 
-            if es_video and os.path.exists(img_para_analisis):
-                try: os.remove(img_para_analisis)
-                except: pass
+            if temp_frame_path:
+                self.eliminar_archivo_temp(temp_frame_path)
             return
 
         res = self.ia.sugerir_persona(img_para_analisis)
         
-        if es_video and os.path.exists(img_para_analisis):
-            try: os.remove(img_para_analisis)
-            except: pass
+        # Limpiar archivo temporal SIEMPRE
+        if temp_frame_path:
+            self.eliminar_archivo_temp(temp_frame_path)
 
-        if job_id != self.current_job_id: return
+        # Verificar nuevamente antes de actualizar UI
+        if job_id != self.current_job_id: 
+            return
 
         def update_ui_ia():
             if "Desconocido" in res or "No detecto" in res:
@@ -513,10 +529,13 @@ class Clasificador:
             else:
                 nombre_carpeta = res.split(" (")[0]
                 if nombre_carpeta in self.carpetasDestino:
-                    self.btn_accion_ia.config(text=f"Mover a: {nombre_carpeta}", 
-                                            command=lambda: self.clasificar(nombre_carpeta))
+                    self.btn_accion_ia.config(
+                        text=f"Mover a: {nombre_carpeta}", 
+                        command=lambda: self.clasificar(nombre_carpeta)
+                    )
                     self.btn_accion_ia.pack(fill='x', pady=5)
             self.sugerenciaIA.set(res)
+        
         self.ventana.after(0, update_ui_ia)
 
     def siguienteElemento(self):
@@ -532,10 +551,28 @@ class Clasificador:
     def clasificar(self, carpeta):
         if not self.lista: return
         contenido = self.lista[self.indiceActual]
-        destino = os.path.join(self.carpetasDestino[carpeta], os.path.basename(contenido))
+        nombre_archivo = os.path.basename(contenido)
+        carpeta_origen = os.path.dirname(contenido)
+        destino = os.path.join(self.carpetasDestino[carpeta], nombre_archivo)
         try:
+            self.historial_movimientos.append({
+                'origen': carpeta_origen,
+                'destino': destino,
+                'nombre': nombre_archivo,
+                'carpeta_nombre': carpeta,
+                'indice_original': self.indiceActual
+            })
+            
+            self.lbl_historial.config(text=f"{len(self.historial_movimientos)} movimientos")
+            
+            # Limitar tamaño del historial
+            if len(self.historial_movimientos) > self.MAX_HISTORIAL: self.historial_movimientos.pop(0)
+            
             shutil.move(contenido, destino)
             self.lista.pop(self.indiceActual)
+            
+            self.btn_deshacer.config(state='normal', bg='#ed4245')
+            
             if self.lista:
                 self.indiceActual %= len(self.lista)
                 self.mostrarContenido()
@@ -546,6 +583,8 @@ class Clasificador:
                 self.sugerenciaIA.set("-")
                 self.btn_accion_ia.pack_forget()
         except Exception as e:
+            # Remover del historial si falló
+            if self.historial_movimientos: self.historial_movimientos.pop()
             messagebox.showerror('Error', f'Error al mover: {e}')
 
     def nuevaCarpetaPopup(self):
@@ -613,6 +652,65 @@ class Clasificador:
                 if sel: run_threaded(self.carpetasDestino[listbox.get(sel[0])])
                 else: messagebox.showwarning("Atención", "Selecciona una carpeta de la lista")
             Button(top, text="Procesar Selección", command=procesar_seleccion, bg=COLOR_ACCENT, fg="white", bd=0, pady=8, width=40).pack(pady=10)
+            
+    def deshacer_ultimo_movimiento(self):
+        """Revierte el último movimiento realizado"""
+        if not self.historial_movimientos:
+            messagebox.showinfo("Info", "No hay movimientos para deshacer")
+            return
+        
+        ultimo = self.historial_movimientos.pop()
+        self.lbl_historial.config(text=f"{(len(self.historial_movimientos))} movimientos")
+        
+        archivo_actual = ultimo['destino']
+        ruta_origen = os.path.join(ultimo['origen'], ultimo['nombre'])
+        
+        try:
+            # Verificar que el archivo existe en destino
+            if not os.path.exists(archivo_actual):
+                messagebox.showerror("Error", f"El archivo '{ultimo['nombre']} ya no existe en la carpeta destino\n" "No se puede deshacer")
+                return
+            
+            # Verificar que no haya conflicto en origen
+            if os.path.exists(ruta_origen):
+                respuesta = messagebox.askyesno(
+                    "Conflicto",
+                    f"Ya existe un archivo con ese nombre en la carpeta origen.\n"
+                    f"¿Sobrescribir?",
+                    icon='warning'
+                )
+                
+                if not respuesta:
+                    # Restaurar al historial si cancela
+                    self.historial_movimientos.append(ultimo)
+                    return
+                
+            # Mover de vuelta
+            shutil.move(archivo_actual, ruta_origen)
+            
+            # Recargar la carpeta origen
+            if self.carpetaOrigen == ultimo['origen']:
+                self.cargarElementos()
+                
+                # Intentar volver al archivo restaurado
+                try:
+                    indice_restaurado = self.lista.index(ruta_origen)
+                    self.indiceActual = indice_restaurado
+                except ValueError:
+                    self.indiceActual = 0
+                    
+                self.mostrarContenido()
+                
+            # Mostrar confirmación
+            self.ventana.after(100, lambda: messagebox.showinfo("Deshecho", f"'{ultimo['nombre']}' restaurado a su ubicación original"))
+            
+            # Deshabilitar botón si no hay más historial
+            if not self.historial_movimientos: self.btn_deshacer.config(state='disabled', bg='#4f545c')
+            
+        except Exception as e:
+            # Restaurar al historial si falla
+            self.historial_movimientos.append(ultimo)
+            messagebox.showerror('Error', f"No se pudo deshacer: {e}")
 
     def reproducirVideo(self, rutaVideo):
         if self.popup_video_actual and self.popup_video_actual.winfo_exists():
@@ -727,6 +825,67 @@ class Clasificador:
             threading.Thread(target=limpieza_bg, daemon=True).start()
         
         popupVideo.protocol("WM_DELETE_WINDOW", cerrarPopup)
+        
+    def limpiar_archivos_temp_antiguos(self):
+        """Limpia archivos temporales de ejecuciones anteriores"""
+        try:
+            directorio_actual = os.getcwd()
+            
+            for archivo in os.listdir(directorio_actual):
+                if (archivo.startswith("temp_frame_") and archivo.endswith(".jpg")) or \
+                (archivo.startswith("temp_ref_") and archivo.endswith(".jpg")):
+                    try:
+                        ruta_completa = os.path.join(directorio_actual, archivo)
+                        os.remove(ruta_completa)
+                        print(f"Limpiado archivo huérfano: {archivo}")
+                    except Exception as e:
+                        print(f"No se pudo eliminar {archivo}: {e}")
+        except Exception as e:
+            print(f"Error en limpieza inicial: {e}")
+            
+    def registrar_archivo_temp(self, ruta):
+        """Registra un archivo temporal para limpieza posterior"""
+        with self.temp_cleanup_lock:
+            self.archivos_temp_activos.add(ruta)
+
+    def eliminar_archivo_temp(self, ruta):
+        """Elimina un archivo temporal y lo quita del registro"""
+        with self.temp_cleanup_lock:
+            if os.path.exists(ruta):
+                try:
+                    os.remove(ruta)
+                except Exception as e:
+                    print(f"⚠️ No se pudo eliminar {ruta}: {e}")
+            
+            # Remover del set
+            self.archivos_temp_activos.discard(ruta)
+
+    def limpiar_todos_los_temp(self):
+        """Limpia todos los archivos temporales registrados"""
+        with self.temp_cleanup_lock:
+            for ruta in list(self.archivos_temp_activos):
+                if os.path.exists(ruta):
+                    try:
+                        os.remove(ruta)
+                    except:
+                        pass
+            self.archivos_temp_activos.clear()
+            
+    def cerrar_aplicacion(self):
+        """Limpia recursos y cierra la aplicación"""
+        try:
+            # Detener video si está activo
+            if hasattr(self, 'video_activo'):
+                self.video_activo = False
+
+            # Limpiar TODOS los archivos temporales
+            self.limpiar_todos_los_temp()
+            
+            # Cerrar pygame si está activo
+            try: pygame.mixer.quit()
+            except: pass
+        except Exception as e: print(f"Error al cerrar: {e}")
+        finally: self.ventana.destroy()
 
 if __name__ == "__main__":
     Clasificador()
