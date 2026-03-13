@@ -108,8 +108,56 @@ class Clasificador:
 
         self.btn_accion_ia = Button(self.card_ia, text="Mover Aquí", bg=COLOR_ACCENT, fg="white", 
                                     font=("Segoe UI", 9, "bold"), bd=0, padx=10, pady=5, cursor=self.cursor)
+        
+        #  Campo de búsqueda/filtro
+        Label(self.panel_derecho, text="CLASIFICAR EN:", bg=COLOR_SIDEBAR, fg=COLOR_TEXT_SEC, 
+            font=("Arial", 8, "bold")).pack(pady=(10, 5), anchor="w", padx=15)
 
-        Label(self.panel_derecho, text="CLASIFICAR EN:", bg=COLOR_SIDEBAR, fg=COLOR_TEXT_SEC, font=("Arial", 8, "bold")).pack(pady=(10, 5), anchor="w", padx=15)
+        # Frame del filtro
+        self.frame_filtro = Frame(self.panel_derecho, bg=COLOR_SIDEBAR)
+        self.frame_filtro.pack(fill='x', padx=15, pady=(0, 10))
+
+        # Variable para el texto del filtro
+        self.filtro_texto = StringVar()
+        self.filtro_texto.trace('w', lambda *args: self.aplicar_filtro())
+
+        # Entry de búsqueda
+        self.entry_filtro = Entry(self.frame_filtro, textvariable=self.filtro_texto,
+                                bg="#40444b", fg="white", font=("Segoe UI", 10),
+                                bd=0, insertbackground="white", relief="flat")
+        self.entry_filtro.pack(side='left', fill='x', expand=True, ipady=5)
+
+        # Placeholder text
+        self.entry_filtro.insert(0, "🔍 Buscar carpeta...")
+        self.entry_filtro.config(fg="#8e8e93")
+
+        # Eventos para el placeholder
+        def on_entry_click(event):
+            if self.entry_filtro.get() == "🔍 Buscar carpeta...":
+                self.entry_filtro.delete(0, "end")
+                self.entry_filtro.config(fg="white")
+
+        def on_focusout(event):
+            if self.entry_filtro.get() == "":
+                self.entry_filtro.insert(0, "🔍 Buscar carpeta...")
+                self.entry_filtro.config(fg="#8e8e93")
+
+        self.entry_filtro.bind('<FocusIn>', on_entry_click)
+        self.entry_filtro.bind('<FocusOut>', on_focusout)
+
+        # Botón para limpiar filtro
+        self.btn_limpiar_filtro = Button(self.frame_filtro, text="✕",
+                                        command=self.limpiar_filtro,
+                                        bg="#40444b", fg="#8e8e93",
+                                        font=("Segoe UI", 11, "bold"),
+                                        bd=0, padx=8, cursor=self.cursor,
+                                        relief="flat")
+        self.btn_limpiar_filtro.pack(side='right', padx=(5, 0))
+
+        def on_enter_x(e): self.btn_limpiar_filtro['fg'] = "white"
+        def on_leave_x(e): self.btn_limpiar_filtro['fg'] = "#8e8e93"
+        self.btn_limpiar_filtro.bind("<Enter>", on_enter_x)
+        self.btn_limpiar_filtro.bind("<Leave>", on_leave_x)
         
         self.frame_lista = Frame(self.panel_derecho, bg=COLOR_SIDEBAR)
         self.frame_lista.pack(fill='both', expand=True, padx=5, pady=5)
@@ -206,6 +254,8 @@ class Clasificador:
         elif event.num == 5 or event.delta < 0: self.canvas.yview_scroll(1, "units")
 
     def actualizarBotones(self):
+        """Actualiza la lista de botones"""
+        self.aplicar_filtro()
         for widget in self.scrollFrame.winfo_children(): widget.destroy()
         if not self.carpetasDestino:
             Label(self.scrollFrame, text="No hay subcarpetas", bg=COLOR_SIDEBAR, fg="gray").pack(pady=10)
@@ -235,6 +285,46 @@ class Clasificador:
                     self.current_job_id += 1
                     threading.Thread(target=self._predecir_actual, args=(self.lista[self.indiceActual], self.current_job_id), daemon=True).start()
         self.ventana.update_idletasks()
+        
+    def aplicar_filtro(self):
+        """Filtra los botones de carpetas según el texto del filtro"""
+        texto_busqueda = self.filtro_texto.get().lower()
+        
+        if texto_busqueda == "🔍 buscar carpeta...":
+            texto_busqueda = ""
+        
+        for widget in self.scrollFrame.winfo_children():
+            widget.destroy()
+        
+        if not self.carpetasDestino:
+            Label(self.scrollFrame, text="No hay subcarpetas", 
+                bg=COLOR_SIDEBAR, fg="gray").pack(pady=10)
+            return
+        
+        self._bind_mouse_scroll(self.scrollFrame)
+        
+        carpetas_filtradas = []
+        for carpeta in sorted(self.carpetasDestino.keys()):
+            if texto_busqueda in carpeta.lower():
+                carpetas_filtradas.append(carpeta)
+        
+        if carpetas_filtradas:
+            for carpeta in carpetas_filtradas:
+                self.btn_crear_categoria(self.scrollFrame, carpeta, 
+                                        lambda c=carpeta: self.clasificar(c))
+        else:
+            Label(self.scrollFrame, text=f"No se encontró '{texto_busqueda}'", 
+                bg=COLOR_SIDEBAR, fg="#faa61a", font=("Segoe UI", 9)).pack(pady=20)
+        
+        self.canvas.config(scrollregion=self.canvas.bbox('all'))
+
+    def limpiar_filtro(self):
+        """Limpia el campo de búsqueda"""
+        self.entry_filtro.delete(0, "end")
+        self.entry_filtro.insert(0, "🔍 Buscar carpeta...")
+        self.entry_filtro.config(fg="#8e8e93")
+        self.filtro_texto.set("")
+        self.entry_filtro.focus()
 
     def seleccionarCarpeta(self):
         self.carpetaOrigen = filedialog.askdirectory(title='Seleccione Carpeta Origen')
