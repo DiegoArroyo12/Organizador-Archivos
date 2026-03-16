@@ -62,7 +62,7 @@ class Clasificador:
         self.historial_movimientos = []
         self.MAX_HISTORIAL = 50
         self.archivos_temp_activos = set()
-        self.temp_cleanup_look = threading.Lock()
+        self.temp_cleanup_lock = threading.Lock()
         self.limpiar_archivos_temp_antiguos()
         
         self.ventana.protocol("WM_DELETE_WINDOW", self.cerrar_aplicacion)
@@ -103,7 +103,7 @@ class Clasificador:
         self.card_ia = Frame(self.panel_derecho, bg="#202225", padx=10, pady=10)
         self.card_ia.pack(fill='x', padx=10, pady=20)
         
-        Label(self.card_ia, text="🤖 MOTOR DE IA", bg="#202225", fg=COLOR_TEXT_SEC, font=("Arial", 8, "bold")).pack(anchor="w")
+        Label(self.card_ia, text="MOTOR DE IA", bg="#202225", fg=COLOR_TEXT_SEC, font=("Arial", 8, "bold")).pack(anchor="w")
         
         style = ttk.Style()
         style.theme_use('default')
@@ -140,30 +140,34 @@ class Clasificador:
         self.entry_filtro.pack(side='left', fill='x', expand=True, ipady=5)
 
         # Placeholder text
-        self.entry_filtro.insert(0, "🔍 Buscar carpeta...")
+        self.entry_filtro.insert(0, "Buscar carpeta...")
         self.entry_filtro.config(fg="#8e8e93")
 
         # Eventos para el placeholder
         def on_entry_click(event):
-            if self.entry_filtro.get() == "🔍 Buscar carpeta...":
+            if self.entry_filtro.get() == "Buscar carpeta...":
                 self.entry_filtro.delete(0, "end")
                 self.entry_filtro.config(fg="white")
 
         def on_focusout(event):
             if self.entry_filtro.get() == "":
-                self.entry_filtro.insert(0, "🔍 Buscar carpeta...")
+                self.entry_filtro.insert(0, "Buscar carpeta...")
                 self.entry_filtro.config(fg="#8e8e93")
 
         self.entry_filtro.bind('<FocusIn>', on_entry_click)
         self.entry_filtro.bind('<FocusOut>', on_focusout)
 
         # Botón para limpiar filtro
-        self.btn_limpiar_filtro = Button(self.frame_filtro, text="✕",
+        self.btn_limpiar_filtro = Button(self.frame_filtro,
                                         command=self.limpiar_filtro,
                                         bg="#40444b", fg="#8e8e93",
                                         font=("Segoe UI", 11, "bold"),
                                         bd=0, padx=8, cursor=self.cursor,
                                         relief="flat")
+        img = Image.open('iconos/x.png').resize((24, 24), Image.Resampling.LANCZOS)
+        foto = ImageTk.PhotoImage(img)
+        self.btn_limpiar_filtro.config(image=foto, compound="left", padx=15)
+        self.btn_limpiar_filtro.image = foto
         self.btn_limpiar_filtro.pack(side='right', padx=(5, 0))
 
         def on_enter_x(e): self.btn_limpiar_filtro['fg'] = "white"
@@ -200,8 +204,8 @@ class Clasificador:
         self.frame_nav.pack(side='bottom', fill='x')
         self.frame_nav.pack_propagate(False)
         
-        self.btn_crear_nav(self.frame_nav, "◀ Anterior", self.anteriorElemento, side=LEFT)
-        self.btn_crear_nav(self.frame_nav, "Siguiente ▶", self.siguienteElemento, side=RIGHT)
+        self.btn_crear_nav(self.frame_nav, "Anterior", self.anteriorElemento, side=LEFT, ruta_imagen='iconos/anterior.png')
+        self.btn_crear_nav(self.frame_nav, "Siguiente", self.siguienteElemento, side=RIGHT, ruta_imagen='iconos/siguiente.png', iconSide='rigth')
 
         self.frame_info_centro = Frame(self.frame_nav, bg=COLOR_BG)
         self.frame_info_centro.pack(side=LEFT, fill='both', expand=True)
@@ -232,15 +236,22 @@ class Clasificador:
         btn.bind("<Enter>", on_enter); btn.bind("<Leave>", on_leave)
         return btn
 
-    def btn_crear_nav(self, parent, text, command, side):
+    def btn_crear_nav(self, parent, text, command, side, ruta_imagen=None, iconSide='left'):
         btn = Button(parent, text=text, command=command, bg="#40444b", fg="white", font=("Segoe UI", 12), bd=0, padx=30, pady=10, cursor=self.cursor)
+        if ruta_imagen and os.path.exists(ruta_imagen):
+            try:
+                img = Image.open(ruta_imagen).resize((24, 24), Image.Resampling.LANCZOS)
+                foto = ImageTk.PhotoImage(img)
+                btn.config(image=foto, compound=iconSide, padx=15)
+                btn.image = foto 
+            except: pass
         btn.pack(side=side, padx=20)
         def on_enter(e): btn['bg'] = "#585d66"
         def on_leave(e): btn['bg'] = "#40444b"
         btn.bind("<Enter>", on_enter); btn.bind("<Leave>", on_leave)
 
     def btn_crear_categoria(self, parent, text, command):
-        btn = Button(parent, text=f"📁 {text}", command=command, bg="#36393f", fg="#dcddde", font=("Segoe UI", 9), bd=0, anchor="w", padx=10, pady=8, cursor=self.cursor)
+        btn = self.btn_crear_moderno(parent, text=f"{text}", command=command, bg_color="#36393f", ruta_imagen="iconos/carpetaIcono.png")
         btn.pack(fill='x', padx=2, pady=1)
         self._bind_mouse_scroll(btn) 
         def on_enter(e): btn['bg'] = COLOR_ACCENT; btn['fg'] = "white"
@@ -302,7 +313,7 @@ class Clasificador:
         """Filtra los botones de carpetas según el texto del filtro"""
         texto_busqueda = self.filtro_texto.get().lower()
         
-        if texto_busqueda == "🔍 buscar carpeta...":
+        if texto_busqueda == "buscar carpeta...":
             texto_busqueda = ""
         
         for widget in self.scrollFrame.winfo_children():
@@ -333,7 +344,7 @@ class Clasificador:
     def limpiar_filtro(self):
         """Limpia el campo de búsqueda"""
         self.entry_filtro.delete(0, "end")
-        self.entry_filtro.insert(0, "🔍 Buscar carpeta...")
+        self.entry_filtro.insert(0, "Buscar carpeta...")
         self.entry_filtro.config(fg="#8e8e93")
         self.filtro_texto.set("")
         self.entry_filtro.focus()
@@ -393,7 +404,7 @@ class Clasificador:
                 self.etiquetaElemento.config(image=foto, text="")
                 self.etiquetaElemento.image = foto
                 
-                btn_edit = Button(self.frame_imagen, text="✂ Recortar", command=lambda: self.abrirEditor(contenido), bg="#40444b", fg="white", font=FONT_BOLD, bd=0, padx=15, pady=5, cursor=self.cursor)
+                btn_edit = self.btn_crear_moderno(self.frame_imagen, text="Recortar", command=lambda: self.abrir_editor_video(contenido), bg_color="#40444b", ruta_imagen="iconos/recortarIcono.png")
                 btn_edit.place(relx=0.95, rely=0.05, anchor="ne")
             except:
                 self.etiquetaElemento.config(image="", text="Error al cargar imagen")
@@ -410,10 +421,10 @@ class Clasificador:
                 self.etiquetaElemento.config(image=foto, text="")
                 self.etiquetaElemento.image = foto
                 
-                btn_play = Button(self.frame_imagen, text="▶ REPRODUCIR", command=lambda: self.reproducirVideo(contenido), bg=COLOR_ACCENT, fg="white", font=FONT_BOLD, bd=0, padx=15, pady=5, cursor=self.cursor)
+                btn_play = self.btn_crear_moderno(self.frame_imagen, text="REPRODUCIR", command=lambda: self.reproducirVideo(contenido), bg_color=COLOR_ACCENT, ruta_imagen="iconos/play.png")
                 btn_play.place(relx=0.5, rely=0.9, anchor="center")
                 
-                btn_crop = Button(self.frame_imagen, text="✂ Recortar Video", command=lambda: self.abrir_editor_video(contenido), bg="#40444b", fg="white", font=FONT_BOLD, bd=0, padx=15, pady=5, cursor=self.cursor)
+                btn_crop = self.btn_crear_moderno(self.frame_imagen, text="Recortar Video", command=lambda: self.abrir_editor_video(contenido), bg_color="#40444b", ruta_imagen="iconos/recortarIcono.png")
                 btn_crop.place(relx=0.95, rely=0.05, anchor="ne")
             else:
                 self.etiquetaElemento.config(text="Video sin vista previa", image="")
@@ -428,10 +439,53 @@ class Clasificador:
             self.sugerenciaIA.set("IA Inactiva")
 
     def abrirEditor(self, image_path):
+        """Abre el editor de imágenes con manejo de errores mejorado"""
+        # Verificar que el archivo existe
+        if not os.path.exists(image_path):
+            messagebox.showerror("Error", f"El archivo no existe:\n{image_path}")
+            return
+        
+        # Verificar que es una imagen válida
+        try:
+            test_img = Image.open(image_path)
+            test_img.close()
+        except Exception as e:
+            messagebox.showerror("Error", f"No se puede abrir la imagen:\n{e}")
+            return
+        
+        # Cancelar cualquier análisis de IA en curso
+        self.current_job_id += 1
+        
         def alTerminar(coords=None):
-            self.mostrarContenido() 
-            if self.ia: threading.Thread(target=self._predecir_actual, args=(image_path, self.current_job_id), daemon=True).start()
-        EditorImagen(self.ventana, image_path, alTerminar, modo_video=False)
+            try:
+                # Dar tiempo para que PIL suelte el archivo
+                time.sleep(0.2)
+                
+                # Recargar contenido
+                self.mostrarContenido() 
+                
+                # Re-analizar con IA después de un delay
+                if self.ia and os.path.exists(image_path):
+                    self.current_job_id += 1
+                    
+                    def analizar_despues():
+                        time.sleep(0.3)  # Esperar a que todo se estabilice
+                        if os.path.exists(image_path):
+                            self._predecir_actual(image_path, self.current_job_id)
+                    
+                    threading.Thread(target=analizar_despues, daemon=True).start()
+            except Exception as e:
+                print(f"❌ Error en callback de editor: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        try:
+            EditorImagen(self.ventana, image_path, alTerminar, modo_video=False)
+        except Exception as e:
+            print(f"❌ Error al abrir editor: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"No se pudo abrir el editor:\n{e}")
 
     def abrir_editor_video(self, video_path):
         try:
@@ -484,59 +538,89 @@ class Clasificador:
 
     def _predecir_actual(self, image_path, job_id):
         if job_id != self.current_job_id: return
+        
         if not self.ia: return
+        
+        # Verificar que el archivo existe
+        if not os.path.exists(image_path):
+            print(f"⚠️ Archivo no encontrado para análisis: {image_path}")
+            return
         
         img_para_analisis = image_path
         temp_frame_path = None
-        es_video = False
         
         if image_path.lower().endswith(self.videoValido):
             try:
                 cap = cv2.VideoCapture(image_path)
                 length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                if length > 10: cap.set(cv2.CAP_PROP_POS_FRAMES, int(length * 0.15))
+                if length > 10: 
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, int(length * 0.15))
                 ret, frame = cap.read()
                 cap.release()
+                
                 if ret:
                     temp_frame_path = f"temp_frame_{uuid.uuid4().hex}.jpg"
                     cv2.imwrite(temp_frame_path, frame)
                     self.registrar_archivo_temp(temp_frame_path)
                     img_para_analisis = temp_frame_path
                     es_video = True
-                else: return
-            except: return
+                else: 
+                    return
+            except Exception as e:
+                print(f"⚠️ Error al extraer frame de video: {e}")
+                return
 
-        # Verificar si el job sigue siendo válido
         if job_id != self.current_job_id: 
-            if temp_frame_path:
-                self.eliminar_archivo_temp(temp_frame_path)
+            if temp_frame_path: self.eliminar_archivo_temp(temp_frame_path)
             return
 
-        res = self.ia.sugerir_persona(img_para_analisis)
+        # Intentar analizar con reintentos si el archivo está bloqueado
+        res = None
+        max_intentos = 3
         
-        # Limpiar archivo temporal SIEMPRE
+        for intento in range(max_intentos):
+            if job_id != self.current_job_id:
+                if temp_frame_path:
+                    self.eliminar_archivo_temp(temp_frame_path)
+                return
+            
+            try:
+                # Verificar que el archivo sigue existiendo
+                if not os.path.exists(img_para_analisis): break
+                res = self.ia.sugerir_persona(img_para_analisis)
+                break  # Éxito
+                
+            except (PermissionError, IOError) as e:
+                if intento < max_intentos - 1: time.sleep(0.5)
+                else: res = "Error: Archivo en uso"
+            except Exception as e:
+                print(f"❌ Error en análisis de IA: {e}")
+                res = "Error en análisis"
+                break
+        
+        # Limpiar archivo temporal
         if temp_frame_path:
             self.eliminar_archivo_temp(temp_frame_path)
 
-        # Verificar nuevamente antes de actualizar UI
-        if job_id != self.current_job_id: 
-            return
+        # Verificar una última vez antes de actualizar UI
+        if job_id != self.current_job_id: return
 
-        def update_ui_ia():
-            if "Desconocido" in res or "No detecto" in res:
-                self.card_ia.config(bg="#202225")
-                self.btn_accion_ia.pack_forget()
-            else:
-                nombre_carpeta = res.split(" (")[0]
-                if nombre_carpeta in self.carpetasDestino:
-                    self.btn_accion_ia.config(
-                        text=f"Mover a: {nombre_carpeta}", 
-                        command=lambda: self.clasificar(nombre_carpeta)
-                    )
-                    self.btn_accion_ia.pack(fill='x', pady=5)
-            self.sugerenciaIA.set(res)
-        
-        self.ventana.after(0, update_ui_ia)
+        if res:
+            def update_ui_ia():
+                if "Desconocido" in res or "No detecto" in res or "Error" in res:
+                    self.card_ia.config(bg="#202225")
+                    self.btn_accion_ia.pack_forget()
+                else:
+                    nombre_carpeta = res.split(" (")[0]
+                    if nombre_carpeta in self.carpetasDestino:
+                        self.btn_accion_ia.config(
+                            text=f"Mover a: {nombre_carpeta}", 
+                            command=lambda: self.clasificar(nombre_carpeta)
+                        )
+                        self.btn_accion_ia.pack(fill='x', pady=5)
+                self.sugerenciaIA.set(res)
+            
+            self.ventana.after(0, update_ui_ia)
 
     def siguienteElemento(self):
         if self.lista:
@@ -554,7 +638,90 @@ class Clasificador:
         nombre_archivo = os.path.basename(contenido)
         carpeta_origen = os.path.dirname(contenido)
         destino = os.path.join(self.carpetasDestino[carpeta], nombre_archivo)
+        
+        # Detectar si es un video
+        es_video = contenido.lower().endswith(self.videoValido)
+        
+        # Si es video y está reproduciéndose, cerrarlo COMPLETAMENTE
+        if es_video:
+            # Verificar si es el video actual reproduciéndose
+            video_reproduciendose = False
+            
+            if hasattr(self, 'ruta_video_actual') and self.ruta_video_actual == contenido:
+                if hasattr(self, 'popup_video_actual') and self.popup_video_actual:
+                    try:
+                        if self.popup_video_actual.winfo_exists():
+                            video_reproduciendose = True
+                    except:
+                        pass
+            
+            if video_reproduciendose:
+                respuesta = messagebox.askyesno(
+                    "Video en reproducción",
+                    "El video está reproduciéndose.\n\n"
+                    "Para moverlo, se cerrará el reproductor y se esperará "
+                    "a que el sistema libere el archivo (puede tardar 1-2 segundos).\n\n"
+                    "¿Continuar?",
+                    icon='question'
+                )
+                if not respuesta: return
+                
+                self.cerrarVideoCompletamente()
+                
+                # Dar MUCHO más tiempo para que Windows libere el archivo
+                time.sleep(1.5)
+        
+        # Cancelar cualquier análisis de IA en curso
+        self.current_job_id += 1
+        time.sleep(0.1)
+        
         try:
+            if not os.path.exists(contenido):
+                messagebox.showerror("Error", f"El archivo ya no existe:\n{nombre_archivo}")
+                return
+            
+            # Para videos, intentos más agresivos
+            intentos = 0
+            max_intentos = 15 if es_video else 5
+            delay_base = 0.8 if es_video else 0.3
+            
+            while intentos < max_intentos:
+                try:
+                    with open(contenido, 'rb') as test_file: pass
+                    break
+                except (PermissionError, IOError) as e:
+                    intentos += 1
+                    delay = delay_base * (1 + intentos * 0.1)  # Delay creciente
+                    
+                    if intentos < max_intentos:
+                        time.sleep(delay)
+                    else:
+                        respuesta = messagebox.askyesnocancel(
+                            "Archivo bloqueado",
+                            f"El archivo '{nombre_archivo}' sigue bloqueado después de {max_intentos} intentos.\n\n"
+                            "Posibles causas:\n"
+                            "• El sistema operativo aún no lo liberó completamente\n"
+                            "• Otra aplicación lo tiene abierto\n\n"
+                            "¿Deseas?\n"
+                            "• SÍ: Esperar 3 segundos más y reintentar\n"
+                            "• NO: Cancelar el movimiento\n"
+                            "• CANCELAR: Volver sin hacer nada",
+                            icon='warning'
+                        )
+                        
+                        if respuesta is None:
+                            return
+                        elif respuesta:
+                            time.sleep(3)
+                            intentos = 0
+                            continue
+                        else:
+                            raise Exception(
+                                f"No se pudo acceder al archivo después de múltiples intentos.\n"
+                                "Intenta cerrar todas las aplicaciones y esperar unos segundos."
+                            )
+            
+            # Resto del código de clasificar() igual...
             self.historial_movimientos.append({
                 'origen': carpeta_origen,
                 'destino': destino,
@@ -563,15 +730,17 @@ class Clasificador:
                 'indice_original': self.indiceActual
             })
             
-            self.lbl_historial.config(text=f"{len(self.historial_movimientos)} movimientos")
-            
-            # Limitar tamaño del historial
-            if len(self.historial_movimientos) > self.MAX_HISTORIAL: self.historial_movimientos.pop(0)
+            if len(self.historial_movimientos) > self.MAX_HISTORIAL:
+                self.historial_movimientos.pop(0)
             
             shutil.move(contenido, destino)
-            self.lista.pop(self.indiceActual)
+            print(f"✓ Archivo movido exitosamente")
             
-            self.btn_deshacer.config(state='normal', bg='#ed4245')
+            self.lista.pop(self.indiceActual)
+            self.btn_deshacer.config(state='normal', bg="#ed4245")
+            
+            if hasattr(self, 'lbl_historial'):
+                self.lbl_historial.config(text=f"📋 {len(self.historial_movimientos)} movimientos")
             
             if self.lista:
                 self.indiceActual %= len(self.lista)
@@ -582,10 +751,15 @@ class Clasificador:
                 self.lbl_nombre_archivo.config(text="...")
                 self.sugerenciaIA.set("-")
                 self.btn_accion_ia.pack_forget()
+        
         except Exception as e:
-            # Remover del historial si falló
-            if self.historial_movimientos: self.historial_movimientos.pop()
-            messagebox.showerror('Error', f'Error al mover: {e}')
+            if self.historial_movimientos and self.historial_movimientos[-1]['nombre'] == nombre_archivo:
+                self.historial_movimientos.pop()
+            
+            print(f"❌ Error al mover archivo: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror('Error', f'Error al mover:\n{str(e)}')
 
     def nuevaCarpetaPopup(self):
         if not self.carpetaDestino:
@@ -713,13 +887,18 @@ class Clasificador:
             messagebox.showerror('Error', f"No se pudo deshacer: {e}")
 
     def reproducirVideo(self, rutaVideo):
-        if self.popup_video_actual and self.popup_video_actual.winfo_exists():
-            self.popup_video_actual.destroy()
-            self.video_activo = False
-            time.sleep(0.1)
+        # Si ya hay un video reproduciéndose, cerrarlo primero
+        if hasattr(self, 'popup_video_actual') and self.popup_video_actual:
+            try:
+                if self.popup_video_actual.winfo_exists():
+                    self.cerrarVideoCompletamente()
+                    time.sleep(0.5)
+            except:
+                pass
 
         popupVideo = Toplevel(self.ventana)
         self.popup_video_actual = popupVideo
+        self.ruta_video_actual = rutaVideo  # Guardar ruta
         
         popupVideo.title('Reproductor')
         popupVideo.configure(bg="black")
@@ -734,49 +913,66 @@ class Clasificador:
         
         self.video_activo = True
         self.detenerAudio = threading.Event()
-        audio_filename = os.path.join(tempfile.gettempdir(), f"temp_audio_{uuid.uuid4().hex}.mp3")
+        self.audio_filename = os.path.join(tempfile.gettempdir(), f"temp_audio_{uuid.uuid4().hex}.mp3")
+        self.moviepy_clip = None  # Guardar referencia
 
         def reproducirAudio():
-            clip = None
             try:
-                clip = VideoFileClip(rutaVideo)
-                clip.audio.write_audiofile(audio_filename, logger=None)
-                clip.close() 
+                # Guardar referencia global para poder cerrarla después
+                self.moviepy_clip = VideoFileClip(rutaVideo)
                 
-                pygame.mixer.music.load(audio_filename)
-                pygame.mixer.music.play()
-                
-                while pygame.mixer.music.get_busy():
-                    if self.detenerAudio.is_set():
-                        pygame.mixer.music.stop()
-                        break
+                if self.moviepy_clip.audio:
+                    self.moviepy_clip.audio.write_audiofile(self.audio_filename, logger=None)
+                    
+                    # Cerrar clip INMEDIATAMENTE después de extraer audio
+                    self.moviepy_clip.close()
+                    self.moviepy_clip = None
+                    
+                    # Ahora reproducir el audio del archivo temporal
+                    pygame.mixer.music.load(self.audio_filename)
+                    pygame.mixer.music.play()
+                    
+                    while pygame.mixer.music.get_busy():
+                        if self.detenerAudio.is_set():
+                            pygame.mixer.music.stop()
+                            break
+                        time.sleep(0.1)
             except Exception as e:
-                # print(f"Info Audio: {e}") # Silenciado para no ensuciar consola
-                pass
+                print(f"⚠️ Error en audio: {e}")
             finally:
-                if 'clip' in locals() and clip: 
-                    try: clip.close()
-                    except: pass
-                if os.path.exists(audio_filename):
-                    try: os.remove(audio_filename)
-                    except: pass
+                # Asegurar que el clip esté cerrado
+                if self.moviepy_clip:
+                    try: 
+                        self.moviepy_clip.close()
+                        self.moviepy_clip = None
+                    except: 
+                        pass
 
-        cap = cv2.VideoCapture(rutaVideo)
+        # VideoCapture para los frames
+        self.cap_video_actual = cv2.VideoCapture(rutaVideo)
+        cap = self.cap_video_actual
+        
         fps = cap.get(cv2.CAP_PROP_FPS)
         speed = 0.8
-        if fps == 0: fps = 30
-        elif fps > 50: speed = 0.5
+        if fps == 0: 
+            fps = 30
+        elif fps > 50: 
+            speed = 0.5
 
         def reproducir():
-            if not self.video_activo: return
-            if not cap.isOpened(): return
+            if not self.video_activo: 
+                return
+            if not cap or not cap.isOpened(): 
+                return
 
             ret, frame = cap.read()
             if not ret:
                 if self.var_autoclose.get():
-                    cerrarPopup()
+                    self.cerrarVideoCompletamente()
                 else:
-                    cap.release()
+                    if cap:
+                        cap.release()
+                        self.cap_video_actual = None
                 return
             
             try:
@@ -787,70 +983,131 @@ class Clasificador:
                 if etiquetaVideo.winfo_exists():
                     etiquetaVideo.config(image=foto)
                     etiquetaVideo.image = foto
-            except: pass
+            except: 
+                pass
 
             delay = int(1000/fps * speed)
-            if delay < 1: delay = 1
+            if delay < 1: 
+                delay = 1
             
             if self.video_activo and popupVideo.winfo_exists():
                 popupVideo.after(delay, reproducir)
             
         reproducir()
         threading.Thread(target=reproducirAudio, daemon=True).start()
-            
-        def cerrarPopup():
-            if not self.video_activo: return
-            self.video_activo = False
-            
-            try: popupVideo.destroy()
-            except: pass
-            
-            def limpieza_bg():
-                self.detenerAudio.set()
-                if cap.isOpened(): cap.release()
-                
-                try: 
-                    pygame.mixer.music.stop()
-                    pygame.mixer.music.unload()
-                except: pass
-                
-                for _ in range(5):
+        
+        popupVideo.protocol("WM_DELETE_WINDOW", self.cerrarVideoCompletamente)
+
+    def cerrarVideoCompletamente(self):
+        """Cierra TODOS los recursos del video para liberar el archivo"""
+        if not hasattr(self, 'video_activo'):
+            return
+        
+        if not self.video_activo:
+            return
+        
+        self.video_activo = False
+        
+        # 1. Detener audio inmediatamente
+        if hasattr(self, 'detenerAudio'):
+            self.detenerAudio.set()
+        
+        # 2. Cerrar MoviePy clip si existe
+        if hasattr(self, 'moviepy_clip') and self.moviepy_clip:
+            try:
+                self.moviepy_clip.close()
+                del self.moviepy_clip
+                self.moviepy_clip = None
+            except Exception as e:
+                print(f"⚠️ Error cerrando MoviePy: {e}")
+        
+        # 3. Liberar VideoCapture
+        if hasattr(self, 'cap_video_actual') and self.cap_video_actual:
+            try:
+                self.cap_video_actual.release()
+                self.cap_video_actual = None
+            except Exception as e:
+                print(f"⚠️ Error liberando VideoCapture: {e}")
+        
+        # 4. Detener y liberar pygame
+        try:
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
+        except:
+            pass
+        
+        # 5. Destruir ventana
+        if hasattr(self, 'popup_video_actual') and self.popup_video_actual:
+            try:
+                if self.popup_video_actual.winfo_exists():
+                    self.popup_video_actual.destroy()
+                self.popup_video_actual = None
+            except:
+                pass
+        
+        # 6. Forzar garbage collection
+        import gc
+        gc.collect()
+        
+        # 7. Esperar a que el sistema operativo libere el archivo
+        time.sleep(1.0)  # Espera más larga
+        
+        # 8. Limpiar archivo de audio en background
+        if hasattr(self, 'audio_filename'):
+            audio_file = self.audio_filename
+            def limpiar_audio():
+                for intento in range(15):  # Más intentos
                     try:
-                        if os.path.exists(audio_filename):
-                            os.remove(audio_filename)
+                        if os.path.exists(audio_file):
+                            os.remove(audio_file)
                         break
                     except:
-                        time.sleep(0.5)
+                        time.sleep(0.3)
             
-            threading.Thread(target=limpieza_bg, daemon=True).start()
-        
-        popupVideo.protocol("WM_DELETE_WINDOW", cerrarPopup)
+            threading.Thread(target=limpiar_audio, daemon=True).start()
         
     def limpiar_archivos_temp_antiguos(self):
         """Limpia archivos temporales de ejecuciones anteriores"""
         try:
             directorio_actual = os.getcwd()
+            archivos_eliminados = 0
             
+            # Buscar archivos temp_frame_*.jpg y temp_ref_*.jpg
             for archivo in os.listdir(directorio_actual):
                 if (archivo.startswith("temp_frame_") and archivo.endswith(".jpg")) or \
                 (archivo.startswith("temp_ref_") and archivo.endswith(".jpg")):
                     try:
                         ruta_completa = os.path.join(directorio_actual, archivo)
                         os.remove(ruta_completa)
-                        print(f"Limpiado archivo huérfano: {archivo}")
+                        archivos_eliminados += 1
                     except Exception as e:
-                        print(f"No se pudo eliminar {archivo}: {e}")
+                        print(f"⚠️ No se pudo eliminar {archivo}: {e}")
         except Exception as e:
-            print(f"Error en limpieza inicial: {e}")
+            print(f"⚠️ Error en limpieza inicial: {e}")
             
     def registrar_archivo_temp(self, ruta):
         """Registra un archivo temporal para limpieza posterior"""
-        with self.temp_cleanup_lock:
-            self.archivos_temp_activos.add(ruta)
+        try:
+            if not hasattr(self, 'temp_cleanup_lock'):
+                self.temp_cleanup_lock = threading.Lock()
+            if not hasattr(self, 'arhivos_temp_activos'):
+                self.archivos_temp_activos = set()
+                
+            with self.temp_cleanup_lock:
+                self.archivos_temp_activos.add(ruta)
+        except Exception as e:
+            print(f"Error al registrar temp {e}")
 
     def eliminar_archivo_temp(self, ruta):
         """Elimina un archivo temporal y lo quita del registro"""
-        with self.temp_cleanup_lock:
+        try:
+            # Crear atributos si no existen
+            if not hasattr(self, 'temp_cleanup_lock'):
+                self.temp_cleanup_lock = threading.Lock()
+            if not hasattr(self, 'archivos_temp_activos'):
+                self.archivos_temp_activos = set()
+            
+            # Eliminar archivo
             if os.path.exists(ruta):
                 try:
                     os.remove(ruta)
@@ -858,18 +1115,34 @@ class Clasificador:
                     print(f"⚠️ No se pudo eliminar {ruta}: {e}")
             
             # Remover del set
-            self.archivos_temp_activos.discard(ruta)
+            with self.temp_cleanup_lock:
+                self.archivos_temp_activos.discard(ruta)
+        except Exception as e:
+            print(f"⚠️ Error al eliminar temp: {e}")
 
     def limpiar_todos_los_temp(self):
         """Limpia todos los archivos temporales registrados"""
-        with self.temp_cleanup_lock:
-            for ruta in list(self.archivos_temp_activos):
+        try:
+            if not hasattr(self, 'temp_cleanup_lock'):
+                self.temp_cleanup_lock = threading.Lock()
+            if not hasattr(self, 'archivos_temp_activos'):
+                self.archivos_temp_activos = set()
+            
+            with self.temp_cleanup_lock:
+                archivos_a_limpiar = list(self.archivos_temp_activos)
+            
+            for ruta in archivos_a_limpiar:
                 if os.path.exists(ruta):
                     try:
                         os.remove(ruta)
-                    except:
-                        pass
-            self.archivos_temp_activos.clear()
+                    except Exception as e:
+                        print(f"⚠️ No se pudo eliminar {ruta}: {e}")
+            
+            if hasattr(self, 'archivos_temp_activos'):
+                self.archivos_temp_activos.clear()
+                
+        except Exception as e:
+            print(f"⚠️ Error en limpieza final: {e}")
             
     def cerrar_aplicacion(self):
         """Limpia recursos y cierra la aplicación"""
@@ -877,15 +1150,18 @@ class Clasificador:
             # Detener video si está activo
             if hasattr(self, 'video_activo'):
                 self.video_activo = False
-
-            # Limpiar TODOS los archivos temporales
+            
+            # Limpiar todos los archivos temporales
             self.limpiar_todos_los_temp()
             
             # Cerrar pygame si está activo
             try: pygame.mixer.quit()
             except: pass
-        except Exception as e: print(f"Error al cerrar: {e}")
-        finally: self.ventana.destroy()
+        except Exception as e:
+            print(f"⚠️ Error al cerrar: {e}")
+        finally:
+            try: self.ventana.destroy()
+            except: pass
 
 if __name__ == "__main__":
     Clasificador()

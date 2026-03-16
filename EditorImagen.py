@@ -20,7 +20,7 @@ class EditorImagen:
         self.modo_video = modo_video
         
         self.window = Toplevel(master)
-        self.window.title("✂️ Recortar Imagen" if not modo_video else "✂️ Recortar Video")
+        self.window.title("Recortar Imagen" if not modo_video else "Recortar Video")
         self.window.configure(bg="#1c1c1e")
         
         # Maximizar ventana
@@ -67,9 +67,14 @@ class EditorImagen:
         Label(header, text="Arrastra para seleccionar el área a conservar", 
               bg="#1c1c1e", fg="#ffffff", font=("Segoe UI", 12)).pack(side="left", pady=10)
         
-        Button(header, text="✕ Cancelar", command=self.cancelar,
-               bg="#3a3a3c", fg="white", font=("Segoe UI", 10), 
-               padx=15, pady=5, relief="flat", cursor="hand2").pack(side="right", padx=5)
+        cancelButton = Button(header, command=self.cancelar,
+                        bg="#3a3a3c", fg="white", font=("Segoe UI", 10), 
+                        padx=15, pady=5, relief="flat", cursor="hand2")
+        img = Image.open('iconos/x.png').resize((24, 24), Image.Resampling.LANCZOS)
+        foto = ImageTk.PhotoImage(img)
+        cancelButton.config(image=foto, compound="left", padx=15)
+        cancelButton.image = foto
+        cancelButton.pack(side="right", padx=5)
 
         # Canvas con la imagen
         canvas_frame = Frame(self.window, bg="#000000")
@@ -101,11 +106,15 @@ class EditorImagen:
         footer = Frame(self.window, bg="#1c1c1e", height=80)
         footer.pack(fill="x", side="bottom", padx=20, pady=20)
         
-        btn_text = "💾 Guardar" if not modo_video else "✓ Aplicar Recorte"
+        btn_text = "Guardar" if not modo_video else "Aplicar Recorte"
         self.btn_guardar = Button(footer, text=btn_text, command=self.guardar,
                                    bg="#007aff", fg="white", font=("Segoe UI", 12, "bold"),
                                    padx=40, pady=12, relief="flat", cursor="hand2",
                                    state="disabled")
+        img = Image.open('iconos/guardar.png').resize((24, 24), Image.Resampling.LANCZOS)
+        foto = ImageTk.PhotoImage(img)
+        self.btn_guardar.config(image=foto, compound="left", padx=15)
+        self.btn_guardar.image = foto
         self.btn_guardar.pack(side="bottom", pady=5)
         
         self.label_info = Label(footer, text="", bg="#1c1c1e", fg="#8e8e93", 
@@ -391,46 +400,95 @@ class EditorImagen:
             messagebox.showwarning("Advertencia", "Primero selecciona un área.")
             return
 
-        coords = self.canvas.coords(self.rect_id)
-        if not coords or len(coords) != 4:
-            return
-
-        # Normalizar coordenadas
-        x1 = min(coords[0], coords[2])
-        y1 = min(coords[1], coords[3])
-        x2 = max(coords[0], coords[2])
-        y2 = max(coords[1], coords[3])
-
-        # Calcular factor de escala (Pantalla → Original)
-        scale_x = self.original_w / self.new_w
-        scale_y = self.original_h / self.new_h
-
-        # Convertir a coordenadas de la imagen original
-        real_x1 = int(x1 * scale_x)
-        real_y1 = int(y1 * scale_y)
-        real_x2 = int(x2 * scale_x)
-        real_y2 = int(y2 * scale_y)
-
         try:
+            coords = self.canvas.coords(self.rect_id)
+            # Coordenadas Inválidas
+            if not coords or len(coords) != 4: return
+
+            # Normalizar coordenadas
+            x1 = min(coords[0], coords[2])
+            y1 = min(coords[1], coords[3])
+            x2 = max(coords[0], coords[2])
+            y2 = max(coords[1], coords[3])
+
+            # Validar que el área no sea demasiado pequeña
+            if (x2 - x1) < 5 or (y2 - y1) < 5:
+                messagebox.showwarning("Área muy pequeña", "Selecciona un área más grande para recortar.")
+                return
+
+            # Calcular factor de escala (Pantalla → Original)
+            scale_x = self.original_w / self.new_w
+            scale_y = self.original_h / self.new_h
+
+            # Convertir a coordenadas de la imagen original
+            real_x1 = max(0, int(x1 * scale_x))
+            real_y1 = max(0, int(y1 * scale_y))
+            real_x2 = min(self.original_w, int(x2 * scale_x))
+            real_y2 = min(self.original_h, int(y2 * scale_y))
+
+            # Validar coordenadas finales
+            if real_x2 <= real_x1 or real_y2 <= real_y1:
+                messagebox.showerror("Error", "Coordenadas de recorte inválidas")
+                return
+
             if self.modo_video:
                 # Retornar coordenadas para recorte de video
-                if self.window.winfo_exists():
-                    self.window.grab_release()
-                    self.window.destroy()
-                if self.callback_guardado:
-                    self.callback_guardado((real_x1, real_y1, real_x2, real_y2))
+                try:
+                    if self.window.winfo_exists():
+                        self.window.grab_release()
+                        self.window.destroy()
+                except Exception as e:
+                    print(f"⚠️ Error al cerrar ventana: {e}")
+                
+                try:
+                    if self.callback_guardado:
+                        self.callback_guardado((real_x1, real_y1, real_x2, real_y2))
+                except Exception as e:
+                    messagebox.showerror("Error", f"Error al procesar: {e}")
             else:
                 # Recortar y sobrescribir la imagen
-                cropped = self.original_image.crop((real_x1, real_y1, real_x2, real_y2))
-                cropped.save(self.image_path)
+                try:
+                    # Verificar que la imagen original sigue disponible
+                    if not self.original_image: raise Exception("Imagen original no disponible")
+                    
+                    # Hacer el recorte
+                    cropped = self.original_image.crop((real_x1, real_y1, real_x2, real_y2))
+                    
+                    # Verificar que el archivo existe y es escribible
+                    if not os.path.exists(self.image_path): raise Exception(f"Archivo no encontrado: {self.image_path}")
+                    
+                    # Guardar con manejo de permisos
+                    try: cropped.save(self.image_path)
+                    except PermissionError:
+                        # Intentar guardar en temporal y luego mover
+                        temp_path = f"{self.image_path}.tmp"
+                        cropped.save(temp_path)
+                        os.replace(temp_path, self.image_path)
+                    
+                    # Cerrar ventana de forma segura
+                    try:
+                        if self.window.winfo_exists():
+                            self.window.grab_release()
+                            self.window.destroy()
+                    except Exception as e:
+                        print(f"⚠️ Error al cerrar ventana: {e}")
+                    
+                    # Mostrar confirmación
+                    messagebox.showinfo("Guardado", "Imagen recortada correctamente.")
+                    
+                    # Ejecutar callback
+                    if self.callback_guardado:
+                        try:
+                            self.callback_guardado()
+                        except Exception as e:
+                            print(f"⚠️ Error en callback: {e}")
                 
-                if self.window.winfo_exists():
-                    self.window.grab_release()
-                    self.window.destroy()
-                
-                messagebox.showinfo("✓ Guardado", "Imagen recortada correctamente.")
-                
-                if self.callback_guardado:
-                    self.callback_guardado()
+                except Exception as e:
+                    print(f"❌ Error al guardar imagen: {e}")
+                    messagebox.showerror("Error", f"No se pudo guardar la imagen:\n{str(e)}")
+                    
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo guardar: {e}")
+            print(f"❌ Error crítico en guardar: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error Crítico", f"Ocurrió un error inesperado:\n{str(e)}\n\nRevisa la consola para más detalles.")
