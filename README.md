@@ -1,5 +1,5 @@
 # Clasificador Facial
-Organizador de fotos por reconocimiento facial con Python
+Organizador de fotos por reconocimiento facial con Python 3.10
 
 **Dependencias:**
 
@@ -60,3 +60,6 @@ Progama para visualizar y ordenar imágenes y videos de una carpeta seleccionada
 ```
 pip install pygame moviepy
 ```
+
+# Archivos .heic de iPhone
+pip install pillow-heif

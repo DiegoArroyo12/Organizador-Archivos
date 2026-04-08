@@ -14,6 +14,13 @@ from LogicaRenombramiento import RenamerTool
 from LogicaFacial import FaceBrain
 from EditorImagen import EditorImagen
 
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+    print("Soporte HEIC Activado")
+except:
+    print("Sin soporte HEIC (instala: pip install pillow-heif)")
+
 COLOR_BG = "#202124"
 COLOR_SIDEBAR = "#2f3136"
 COLOR_ACCENT = "#5865F2"
@@ -63,6 +70,8 @@ class Clasificador:
         self.MAX_HISTORIAL = 50
         self.archivos_temp_activos = set()
         self.temp_cleanup_lock = threading.Lock()
+        self.ia_lock = threading.Lock()
+        self.ia_analyzing = False
         self.limpiar_archivos_temp_antiguos()
         
         self.ventana.protocol("WM_DELETE_WINDOW", self.cerrar_aplicacion)
@@ -80,7 +89,7 @@ class Clasificador:
         self.btn_crear_moderno(self.panel_izquierdo, "Origen", self.seleccionarCarpeta, COLOR_ACCENT, ruta_imagen="iconos/carpetaIcono.png")
         self.btn_crear_moderno(self.panel_izquierdo, "Destino (IA)", self.carpetaPrincipalDestino, COLOR_ACCENT, ruta_imagen="iconos/carpetaIcono.png")
         
-        self.check_autoclose = Checkbutton(self.panel_izquierdo, text="Auto-cerrar Videos", variable=self.var_autoclose,
+        self.check_autoclose = Checkbutton(self.panel_izquierdo, text="Auto-Cerrar Videos", variable=self.var_autoclose,
                                            bg=COLOR_SIDEBAR, fg="white", selectcolor=COLOR_BG, activebackground=COLOR_SIDEBAR, activeforeground="white",
                                            font=("Segoe UI", 9), bd=0, highlightthickness=0)
         self.check_autoclose.pack(fill='x', padx=15, pady=(5, 10))
@@ -197,7 +206,7 @@ class Clasificador:
         self.frame_imagen.pack(fill='both', expand=True, padx=20, pady=20)
         self.frame_imagen.pack_propagate(False)
         
-        self.etiquetaElemento = Label(self.frame_imagen, bg="#000000", text="Sin imagen cargada", fg="#555")
+        self.etiquetaElemento = Label(self.frame_imagen, bg="#000000", text="Sin Imagen Cargada", fg="#555")
         self.etiquetaElemento.pack(fill='both', expand=True)
 
         self.frame_nav = Frame(self.panel_central, bg=COLOR_BG, pady=20, height=80)
@@ -205,7 +214,7 @@ class Clasificador:
         self.frame_nav.pack_propagate(False)
         
         self.btn_crear_nav(self.frame_nav, "Anterior", self.anteriorElemento, side=LEFT, ruta_imagen='iconos/anterior.png')
-        self.btn_crear_nav(self.frame_nav, "Siguiente", self.siguienteElemento, side=RIGHT, ruta_imagen='iconos/siguiente.png', iconSide='rigth')
+        self.btn_crear_nav(self.frame_nav, "Siguiente", self.siguienteElemento, side=RIGHT, ruta_imagen='iconos/siguiente.png', iconSide='right')
 
         self.frame_info_centro = Frame(self.frame_nav, bg=COLOR_BG)
         self.frame_info_centro.pack(side=LEFT, fill='both', expand=True)
@@ -237,10 +246,10 @@ class Clasificador:
         return btn
 
     def btn_crear_nav(self, parent, text, command, side, ruta_imagen=None, iconSide='left'):
-        btn = Button(parent, text=text, command=command, bg="#40444b", fg="white", font=("Segoe UI", 12), bd=0, padx=30, pady=10, cursor=self.cursor)
+        btn = Button(parent, text=text, command=command, bg="#40444b", fg="white", font=("Segoe UI", 12), bd=0, padx=30, pady=5, cursor=self.cursor)
         if ruta_imagen and os.path.exists(ruta_imagen):
             try:
-                img = Image.open(ruta_imagen).resize((24, 24), Image.Resampling.LANCZOS)
+                img = Image.open(ruta_imagen).resize((28, 28), Image.Resampling.LANCZOS)
                 foto = ImageTk.PhotoImage(img)
                 btn.config(image=foto, compound=iconSide, padx=15)
                 btn.image = foto 
@@ -313,7 +322,7 @@ class Clasificador:
         """Filtra los botones de carpetas según el texto del filtro"""
         texto_busqueda = self.filtro_texto.get().lower()
         
-        if texto_busqueda == "buscar carpeta...":
+        if texto_busqueda == "Buscar Carpeta...":
             texto_busqueda = ""
         
         for widget in self.scrollFrame.winfo_children():
@@ -377,12 +386,23 @@ class Clasificador:
 
     def mostrarContenido(self):
         if not self.lista: return
+        
         self.current_job_id += 1
         job_id = self.current_job_id
         
         contenido = self.lista[self.indiceActual]
         ext = os.path.splitext(contenido)[1].lower()
         nombre_archivo = os.path.basename(contenido)
+        
+        if not self.es_archivo_icloud_descargado(contenido):
+            self.etiquetaElemento.config(
+                image="", 
+                text=f"Archivo descargándose desde iCloud\n\n{nombre_archivo}\n\nEspera un momento..."
+            )
+            self.lbl_contador.config(text=f"{self.indiceActual + 1} / {len(self.lista)}")
+            self.lbl_nombre_archivo.config(text=nombre_archivo + " (descargando...)")
+            self.ventana.after(2000, self.mostrarContenido)
+            return
         
         self.lbl_contador.config(text=f"{self.indiceActual + 1} / {len(self.lista)}")
         self.lbl_nombre_archivo.config(text=nombre_archivo)
@@ -404,7 +424,12 @@ class Clasificador:
                 self.etiquetaElemento.config(image=foto, text="")
                 self.etiquetaElemento.image = foto
                 
-                btn_edit = self.btn_crear_moderno(self.frame_imagen, text="Recortar", command=lambda: self.abrir_editor_video(contenido), bg_color="#40444b", ruta_imagen="iconos/recortarIcono.png")
+                btn_edit = self.btn_crear_moderno(
+                    self.frame_imagen, 
+                    text="Recortar Imagen", 
+                    command=lambda: self.abrirEditor(contenido), 
+                    bg_color="#40444b", 
+                    ruta_imagen="iconos/recortarIcono.png")
                 btn_edit.place(relx=0.95, rely=0.05, anchor="ne")
             except:
                 self.etiquetaElemento.config(image="", text="Error al cargar imagen")
@@ -421,10 +446,20 @@ class Clasificador:
                 self.etiquetaElemento.config(image=foto, text="")
                 self.etiquetaElemento.image = foto
                 
-                btn_play = self.btn_crear_moderno(self.frame_imagen, text="REPRODUCIR", command=lambda: self.reproducirVideo(contenido), bg_color=COLOR_ACCENT, ruta_imagen="iconos/play.png")
+                btn_play = self.btn_crear_moderno(
+                    self.frame_imagen, 
+                    text="REPRODUCIR", 
+                    command=lambda: self.reproducirVideo(contenido), 
+                    bg_color=COLOR_ACCENT, 
+                    ruta_imagen="iconos/play.png")
                 btn_play.place(relx=0.5, rely=0.9, anchor="center")
                 
-                btn_crop = self.btn_crear_moderno(self.frame_imagen, text="Recortar Video", command=lambda: self.abrir_editor_video(contenido), bg_color="#40444b", ruta_imagen="iconos/recortarIcono.png")
+                btn_crop = self.btn_crear_moderno(
+                    self.frame_imagen, 
+                    text="Recortar Video", 
+                    command=lambda: self.abrirEditorVideo(contenido), 
+                    bg_color="#40444b", 
+                    ruta_imagen="iconos/recortarIcono.png")
                 btn_crop.place(relx=0.95, rely=0.05, anchor="ne")
             else:
                 self.etiquetaElemento.config(text="Video sin vista previa", image="")
@@ -434,107 +469,210 @@ class Clasificador:
         
         if self.ia:
             self.sugerenciaIA.set("Analizando...")
-            threading.Thread(target=self._predecir_actual, args=(contenido, job_id), daemon=True).start()
-        else:
+            
+            def iniciarAnalisisDelay():
+                time.sleep(0.3)
+                if job_id == self.current_job_id:
+                    threading.Thread(
+                        target=self._predecir_actual,
+                        args=(contenido, job_id),
+                        daemon=True
+                    ).start()
+            
+            # Ejecutar en un thread separado
+            threading.Thread(target=iniciarAnalisisDelay, daemon=True).start()
+        else: 
             self.sugerenciaIA.set("IA Inactiva")
-
+            
     def abrirEditor(self, image_path):
         """Abre el editor de imágenes con manejo de errores mejorado"""
-        # Verificar que el archivo existe
         if not os.path.exists(image_path):
             messagebox.showerror("Error", f"El archivo no existe:\n{image_path}")
             return
         
-        # Verificar que es una imagen válida
-        try:
-            test_img = Image.open(image_path)
-            test_img.close()
-        except Exception as e:
-            messagebox.showerror("Error", f"No se puede abrir la imagen:\n{e}")
+        ext = os.path.splitext(image_path)[1].lower()
+        if ext in self.videoValido:
+            messagebox.showerror("Error", "Este es un archivo de video, no una imagen.")
             return
         
-        # Cancelar cualquier análisis de IA en curso
+        if not self.es_archivo_icloud_descargado(image_path):
+            messagebox.showwarning("Descargando", 
+                "El archivo aún se está descargando desde iCloud.\n"
+                "Espera a que termine la descarga e intenta de nuevo.")
+            return
+        
+        try:
+            test_img = Image.open(image_path)
+            test_img.verify()
+            test_img.close()
+            test_img = Image.open(image_path)
+            width, height = test_img.size
+            test_img.close()
+            
+            if width == 0 or height == 0: 
+                raise Exception("La imagen no tiene dimensiones válidas")
+                
+            print(f"✓ Imagen válida: {width}x{height}px")
+            
+        except Exception as e:
+            messagebox.showerror("Error", 
+                f"No se puede abrir la imagen:\n{str(e)}\n\n"
+                "Posibles causas:\n"
+                "• Archivo corrupto o incompleto\n"
+                "• Formato no soportado\n"
+                "• Archivo aún descargándose de iCloud")
+            return
+        
+        # Cancelar análisis mientras se edita
         self.current_job_id += 1
         
         def alTerminar(coords=None):
             try:
                 # Dar tiempo para que PIL suelte el archivo
-                time.sleep(0.2)
+                time.sleep(0.3)
                 
-                # Recargar contenido
-                self.mostrarContenido() 
+                # Recargar contenido visual
+                self.mostrarContenido()
                 
-                # Re-analizar con IA después de un delay
+                # Re-analizar con IA SIEMPRE que exista IA
                 if self.ia and os.path.exists(image_path):
                     self.current_job_id += 1
+                    nuevo_job_id = self.current_job_id
                     
-                    def analizar_despues():
-                        time.sleep(0.3)  # Esperar a que todo se estabilice
-                        if os.path.exists(image_path):
-                            self._predecir_actual(image_path, self.current_job_id)
+                    # Actualizar UI inmediatamente
+                    self.sugerenciaIA.set("Analizando...")
                     
-                    threading.Thread(target=analizar_despues, daemon=True).start()
+                    def analizarImagenEditada():
+                        # Esperar a que el archivo esté listo
+                        time.sleep(0.5)
+                        
+                        # Verificar que seguimos en la misma imagen
+                        if self.lista and self.indiceActual < len(self.lista):
+                            archivoActual = self.lista[self.indiceActual]
+                            if archivoActual == image_path:
+                                self._predecir_actual(image_path, nuevo_job_id)
+                            else:
+                                print(f"Usuario cambió de imagen, cancelando análisis")
+                        else:
+                            print(f"Lista vacía, cancelando análisis")
+                    threading.Thread(target=analizarImagenEditada, daemon=True).start()
+                else:
+                    # Si no hay IA, limpiar UI
+                    self.sugerenciaIA.set("IA Inactiva" if not self.ia else "-")
+                    
             except Exception as e:
-                print(f"❌ Error en callback de editor: {e}")
+                print(f"Error en callback de editor: {e}")
                 import traceback
                 traceback.print_exc()
-        
         try:
             EditorImagen(self.ventana, image_path, alTerminar, modo_video=False)
         except Exception as e:
-            print(f"❌ Error al abrir editor: {e}")
+            print(f"Error al abrir editor: {e}")
             import traceback
             traceback.print_exc()
             messagebox.showerror("Error", f"No se pudo abrir el editor:\n{e}")
 
-    def abrir_editor_video(self, video_path):
+    def abrirEditorVideo(self, video_path):
+        """Abre el editor de videos con manejo de errores mejorado"""
+        
+        if not os.path.exists(video_path):
+            messagebox.showerror("Errro", f"El archivo no existe:\n{video_path}")
+            return
+        
         try:
             cap = cv2.VideoCapture(video_path)
             ret, frame = cap.read()
             cap.release()
+            
             if not ret: 
-                messagebox.showerror("Error", "No se pudo leer el video")
+                messagebox.showerror("Error", 
+                    "No se pudo leer el video.\n\n"
+                    "Posibles causas:\n"
+                    "• Codec no compatible\n"
+                    "• Archivo corrupto\n"
+                    "• Archivo aún descargándose de iCloud")
                 return
+            
             temp_ref = f"temp_ref_{uuid.uuid4().hex}.jpg"
             cv2.imwrite(temp_ref, frame)
             self.registrar_archivo_temp(temp_ref)
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
+            
+        except Exception as error_inicial:
+            messagebox.showerror("Error", 
+                f"No se pudo procesar el video:\n{str(error_inicial)}\n\n"
+                "Si el archivo está en iCloud, espera a que termine de descargar.")
             return
 
         def al_recibir_coords(coords):
             self.eliminar_archivo_temp(temp_ref)
             
-            if not coords: return
+            if not coords: 
+                return
+            
             x1, y1, x2, y2 = coords
             
             def procesar():
-                popup = Toplevel(self.ventana)
-                popup.title("Procesando Video...")
-                popup.geometry("300x100")
-                Label(popup, text="Recortando video, espera...", font=("Arial", 10)).pack(pady=20)
+                popup = None
                 try:
+                    popup = Toplevel(self.ventana)
+                    popup.title("Procesando Video...")
+                    popup.geometry("350x120")
+                    popup.configure(bg=COLOR_BG)
+                    
+                    Label(popup, text="Recortando video, espera...", 
+                        font=("Arial", 10), bg=COLOR_BG, fg="white").pack(pady=20)
+                    
                     dir_name = os.path.dirname(video_path)
                     base_name = os.path.basename(video_path)
                     temp_out = os.path.join(dir_name, f"temp_crop_{base_name}")
                     
                     clip = VideoFileClip(video_path)
                     cropped_clip = clip.cropped(x1=x1, y1=y1, x2=x2, y2=y2)
-                    cropped_clip.write_videofile(temp_out, codec="libx264", audio_codec="aac", logger=None)
+                    cropped_clip.write_videofile(temp_out, codec="libx264", 
+                                                audio_codec="aac", logger=None)
                     clip.close()
                     cropped_clip.close()
-                    time.sleep(0.5) 
+                    
+                    time.sleep(0.5)
                     shutil.move(temp_out, video_path)
                     
-                    self.ventana.after(0, lambda: messagebox.showinfo("Éxito", "Video recortado."))
+                    self.ventana.after(0, lambda: messagebox.showinfo(
+                        "Éxito", "Video Recortado Correctamente."
+                    ))
                     self.ventana.after(0, self.mostrarContenido)
-                except Exception as e:
-                    self.ventana.after(0, lambda: messagebox.showerror("Error", f"Fallo al procesar: {e}"))
+                    
+                except Exception as error_proceso:
+                    error_msg = str(error_proceso)
+                    self.ventana.after(0, lambda msg=error_msg: messagebox.showerror(
+                        "Error", f"Fallo al Procesar:\n{msg}"
+                    ))
                 finally:
-                    self.ventana.after(0, popup.destroy)
+                    if popup:
+                        self.ventana.after(0, popup.destroy)
+            
             threading.Thread(target=procesar, daemon=True).start()
 
         EditorImagen(self.ventana, temp_ref, al_recibir_coords, modo_video=True)
+        
+    def es_archivo_icloud_descargado(self, ruta):
+        """Verifica si un archivo de iCloud está completamente descargado"""
+        if not os.path.exists(ruta):
+            return False
+        
+        # En Windows, iCloud crea archivos .icloud mientras descarga
+        directorio = os.path.dirname(ruta)
+        nombre = os.path.basename(ruta)
+        archivo_icloud = os.path.join(directorio, f".{nombre}.icloud")
+        
+        if os.path.exists(archivo_icloud):
+            return False  # Aún descargándose
+        
+        # Verificar que el archivo tenga tamaño > 0
+        try:
+            tamaño = os.path.getsize(ruta)
+            return tamaño > 0
+        except:
+            return False
 
     def _predecir_actual(self, image_path, job_id):
         if job_id != self.current_job_id: return
@@ -543,84 +681,116 @@ class Clasificador:
         
         # Verificar que el archivo existe
         if not os.path.exists(image_path):
-            print(f"⚠️ Archivo no encontrado para análisis: {image_path}")
+            print(f"Archivo no encontrado para análisis: {image_path}")
             return
         
-        img_para_analisis = image_path
-        temp_frame_path = None
+        lock_adquirido = self.ia_lock.acquire(blocking=False)
+        if not lock_adquirido: return
         
-        if image_path.lower().endswith(self.videoValido):
-            try:
-                cap = cv2.VideoCapture(image_path)
-                length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                if length > 10: 
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, int(length * 0.15))
-                ret, frame = cap.read()
-                cap.release()
-                
-                if ret:
-                    temp_frame_path = f"temp_frame_{uuid.uuid4().hex}.jpg"
-                    cv2.imwrite(temp_frame_path, frame)
-                    self.registrar_archivo_temp(temp_frame_path)
-                    img_para_analisis = temp_frame_path
-                    es_video = True
-                else: 
+        try:
+            self.ia_analyzing = True
+            img_para_analisis = image_path
+            temp_frame_path = None
+            es_video = False
+
+            estension = os.path.splitext(image_path)[1].lower()
+            
+            if estension in self.videoValido:
+                try:
+                    cap = cv2.VideoCapture(image_path)
+                    length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    if length > 10: 
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, int(length * 0.15))
+                    ret, frame = cap.read()
+                    cap.release()
+                    
+                    if ret:
+                        temp_frame_path = f"temp_frame_{uuid.uuid4().hex}.jpg"
+                        cv2.imwrite(temp_frame_path, frame)
+                        self.registrar_archivo_temp(temp_frame_path)
+                        img_para_analisis = temp_frame_path
+                        es_video = True
+                    else: 
+                        return
+                except Exception as e:
+                    print(f"Error al extraer frame de video: {e}")
                     return
-            except Exception as e:
-                print(f"⚠️ Error al extraer frame de video: {e}")
+
+            if job_id != self.current_job_id: 
+                if temp_frame_path: self.eliminar_archivo_temp(temp_frame_path)
                 return
 
-        if job_id != self.current_job_id: 
-            if temp_frame_path: self.eliminar_archivo_temp(temp_frame_path)
-            return
-
-        # Intentar analizar con reintentos si el archivo está bloqueado
-        res = None
-        max_intentos = 3
-        
-        for intento in range(max_intentos):
-            if job_id != self.current_job_id:
-                if temp_frame_path:
-                    self.eliminar_archivo_temp(temp_frame_path)
-                return
+            # Intentar analizar con reintentos si el archivo está bloqueado
+            res = None
+            max_intentos = 3
             
-            try:
-                # Verificar que el archivo sigue existiendo
-                if not os.path.exists(img_para_analisis): break
-                res = self.ia.sugerir_persona(img_para_analisis)
-                break  # Éxito
+            for intento in range(max_intentos):
+                # Verificar job_id en cada intento
+                if job_id != self.current_job_id:
+                    if temp_frame_path:
+                        self.eliminar_archivo_temp(temp_frame_path)
+                    return
                 
-            except (PermissionError, IOError) as e:
-                if intento < max_intentos - 1: time.sleep(0.5)
-                else: res = "Error: Archivo en uso"
-            except Exception as e:
-                print(f"❌ Error en análisis de IA: {e}")
-                res = "Error en análisis"
-                break
-        
-        # Limpiar archivo temporal
-        if temp_frame_path:
-            self.eliminar_archivo_temp(temp_frame_path)
-
-        # Verificar una última vez antes de actualizar UI
-        if job_id != self.current_job_id: return
-
-        if res:
-            def update_ui_ia():
-                if "Desconocido" in res or "No detecto" in res or "Error" in res:
-                    self.card_ia.config(bg="#202225")
-                    self.btn_accion_ia.pack_forget()
-                else:
-                    nombre_carpeta = res.split(" (")[0]
-                    if nombre_carpeta in self.carpetasDestino:
-                        self.btn_accion_ia.config(
-                            text=f"Mover a: {nombre_carpeta}", 
-                            command=lambda: self.clasificar(nombre_carpeta)
-                        )
-                        self.btn_accion_ia.pack(fill='x', pady=5)
-                self.sugerenciaIA.set(res)
+                try:
+                    if not os.path.exists(img_para_analisis): break
+                    
+                    try:
+                        res = self.ia.sugerir_persona(img_para_analisis)
+                        break  # Éxito
+                    except Exception as e:
+                        # Si es error de TensorFlow/Retval, reintentar
+                        if "Retval" in str(e) or "INTERNAL" in str(e):
+                            print(f"Error de TensorFlow, reintentando ({intento+1}/{max_intentos})...")
+                            time.sleep(0.5)
+                            continue
+                        else: raise  # Re-lanzar otros errores
+                    
+                except (PermissionError, IOError) as e:
+                    if intento < max_intentos - 1:
+                        print(f"Archivo en uso, reintentando análisis ({intento+1}/{max_intentos})...")
+                        time.sleep(0.5)
+                    else:
+                        print(f"No se pudo analizar después de {max_intentos} intentos")
+                        res = "Error: Archivo en uso"
+                except Exception as e:
+                    print(f"Error en análisis de IA: {e}")
+                    res = "Error en análisis"
+                    break
             
-            self.ventana.after(0, update_ui_ia)
+            # Limpiar archivo temporal
+            if temp_frame_path:
+                self.eliminar_archivo_temp(temp_frame_path)
+
+            # Verificar una última vez antes de actualizar UI
+            if job_id != self.current_job_id:
+                print(f"Análisis completado pero obsoleto (job {job_id})")
+                return
+
+            if res:
+                def update_ui_ia():
+                    if "Desconocido" in res or "No detecto" in res or "Error" in res:
+                        self.card_ia.config(bg="#202225")
+                        self.btn_accion_ia.pack_forget()
+                    else:
+                        nombre_carpeta = res.split(" (")[0]
+                        if nombre_carpeta in self.carpetasDestino:
+                            self.btn_accion_ia.config(
+                                text=f"Mover a: {nombre_carpeta}", 
+                                command=lambda: self.clasificar(nombre_carpeta)
+                            )
+                            self.btn_accion_ia.pack(fill='x', pady=5)
+                    self.sugerenciaIA.set(res)
+                
+                self.ventana.after(0, update_ui_ia)
+        finally:
+            # Liberar el Lock
+            self.ia_analyzing = False
+            self.ia_lock.release()
+            
+            if job_id != self.current_job_id and res is None:
+                def limpiarUI():
+                    if self.sugerenciaIA.get() == "Analizando...": self.sugerenciaIA.set("-")
+                self.ventana.after(0, limpiarUI)
 
     def siguienteElemento(self):
         if self.lista:
@@ -734,7 +904,6 @@ class Clasificador:
                 self.historial_movimientos.pop(0)
             
             shutil.move(contenido, destino)
-            print(f"✓ Archivo movido exitosamente")
             
             self.lista.pop(self.indiceActual)
             self.btn_deshacer.config(state='normal', bg="#ed4245")

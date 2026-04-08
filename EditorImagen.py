@@ -438,7 +438,7 @@ class EditorImagen:
                         self.window.grab_release()
                         self.window.destroy()
                 except Exception as e:
-                    print(f"⚠️ Error al cerrar ventana: {e}")
+                    print(f"Error al cerrar ventana: {e}")
                 
                 try:
                     if self.callback_guardado:
@@ -471,24 +471,24 @@ class EditorImagen:
                             self.window.grab_release()
                             self.window.destroy()
                     except Exception as e:
-                        print(f"⚠️ Error al cerrar ventana: {e}")
+                        print(f"Error al cerrar ventana: {e}")
                     
                     # Mostrar confirmación
-                    messagebox.showinfo("Guardado", "Imagen recortada correctamente.")
+                    messagebox.showinfo("Guardado", "Recorte Completado")
                     
                     # Ejecutar callback
                     if self.callback_guardado:
                         try:
                             self.callback_guardado()
                         except Exception as e:
-                            print(f"⚠️ Error en callback: {e}")
+                            print(f"Error en callback: {e}")
                 
                 except Exception as e:
-                    print(f"❌ Error al guardar imagen: {e}")
+                    print(f"Error al guardar imagen: {e}")
                     messagebox.showerror("Error", f"No se pudo guardar la imagen:\n{str(e)}")
                     
         except Exception as e:
-            print(f"❌ Error crítico en guardar: {e}")
+            print(f"Error crítico en guardar: {e}")
             import traceback
             traceback.print_exc()
             messagebox.showerror("Error Crítico", f"Ocurrió un error inesperado:\n{str(e)}\n\nRevisa la consola para más detalles.")
