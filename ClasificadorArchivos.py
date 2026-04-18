@@ -99,11 +99,27 @@ class Clasificador:
         Label(self.panel_izquierdo, text="ACCIONES", bg=COLOR_SIDEBAR, fg=COLOR_TEXT_SEC, font=("Arial", 8, "bold")).pack(pady=(5, 5), anchor="w", padx=15)
         self.btn_crear_moderno(self.panel_izquierdo, "Nueva Carpeta", self.nuevaCarpetaPopup, "#4f545c", ruta_imagen="iconos/agregarIcono.png")
         self.btn_crear_moderno(self.panel_izquierdo, "Herramientas", self.abrir_menu_herramientas, COLOR_WARNING, ruta_imagen="iconos/herramientasIcono.png")
-        
+
         self.btn_deshacer = self.btn_crear_moderno(self.panel_izquierdo, "Deshacer Último", self.deshacer_ultimo_movimiento, '#ed4245', ruta_imagen="iconos/deshacer.png")
         self.btn_deshacer.config(state='disabled', bg='#4f545c')
         self.lbl_historial = Label(self.panel_izquierdo, text="0 movimientos", bg=COLOR_SIDEBAR, fg="#8e8e93", font=("Segoe UI", 8))
         self.lbl_historial.pack(anchor="w", padx=15, pady=(0,5))
+
+        # Deshacer (Ctrl + Z)
+        def atajo_deshacer(event=None):
+            # Seguridad: Solo ejecuta la acción si el botón está habilitado
+            # (es decir, si realmente hay algo en el historial para deshacer)
+            if self.btn_deshacer['state'] == 'normal':
+                self.deshacer_ultimo_movimiento()
+
+        # Vincular Ctrl+Z (Windows/Linux)
+        self.ventana.bind('<Control-z>', atajo_deshacer)
+        self.ventana.bind('<Control-Z>', atajo_deshacer)  # Por si tienes el Bloq Mayús activado
+
+        # Vincular Command+Z (Solo para Mac)
+        if platform.system() == 'Darwin':
+            self.ventana.bind('<Command-z>', atajo_deshacer)
+            self.ventana.bind('<Command-Z>', atajo_deshacer)
 
         self.panel_derecho = Frame(self.ventana, bg=COLOR_SIDEBAR, width=280)
         self.panel_derecho.pack(side='right', fill='y')
@@ -393,8 +409,14 @@ class Clasificador:
         contenido = self.lista[self.indiceActual]
         ext = os.path.splitext(contenido)[1].lower()
         nombre_archivo = os.path.basename(contenido)
+
+        def atajoRecorte(event = None):
+            if ext in self.imagenValida: self.abrirEditor(contenido)
+            elif ext in self.videoValido: self.abrirEditorVideo(contenido)
         
         if not self.es_archivo_icloud_descargado(contenido):
+            self.ventana.unbind('<r>')
+            self.ventana.unbind('<R>')
             self.etiquetaElemento.config(
                 image="", 
                 text=f"Archivo descargándose desde iCloud\n\n{nombre_archivo}\n\nEspera un momento..."
@@ -403,6 +425,9 @@ class Clasificador:
             self.lbl_nombre_archivo.config(text=nombre_archivo + " (descargando...)")
             self.ventana.after(2000, self.mostrarContenido)
             return
+
+        self.ventana.bind('<r>', atajoRecorte)
+        self.ventana.bind('<R>', atajoRecorte)
         
         self.lbl_contador.config(text=f"{self.indiceActual + 1} / {len(self.lista)}")
         self.lbl_nombre_archivo.config(text=nombre_archivo)
@@ -426,7 +451,7 @@ class Clasificador:
                 
                 btn_edit = self.btn_crear_moderno(
                     self.frame_imagen, 
-                    text="Recortar Imagen", 
+                    text="Recortar Imagen (R)",
                     command=lambda: self.abrirEditor(contenido), 
                     bg_color="#40444b", 
                     ruta_imagen="iconos/recortarIcono.png")
@@ -456,7 +481,7 @@ class Clasificador:
                 
                 btn_crop = self.btn_crear_moderno(
                     self.frame_imagen, 
-                    text="Recortar Video", 
+                    text="Recortar Video (",
                     command=lambda: self.abrirEditorVideo(contenido), 
                     bg_color="#40444b", 
                     ruta_imagen="iconos/recortarIcono.png")
@@ -771,14 +796,28 @@ class Clasificador:
                     if "Desconocido" in res or "No detecto" in res or "Error" in res:
                         self.card_ia.config(bg="#202225")
                         self.btn_accion_ia.pack_forget()
+                        self.ventana.unbind('<i>')
+                        self.ventana.unbind('<I>')
                     else:
                         nombre_carpeta = res.split(" (")[0]
                         if nombre_carpeta in self.carpetasDestino:
                             self.btn_accion_ia.config(
-                                text=f"Mover a: {nombre_carpeta}", 
+                                text=f"Mover a: {nombre_carpeta} (I)",
                                 command=lambda: self.clasificar(nombre_carpeta)
                             )
                             self.btn_accion_ia.pack(fill='x', pady=5)
+
+                            def aceptar_sugerencia_ia(event=None):
+                                # Medida de seguridad: Validar que el usuario no haya cambiado de imagen
+                                if job_id == self.current_job_id:
+                                    self.clasificar(nombre_carpeta)
+                                    # Desvincular inmediatamente después de mover
+                                    self.ventana.unbind('<i>')
+                                    self.ventana.unbind('<I>')
+
+                            self.ventana.bind('<i>', aceptar_sugerencia_ia)
+                            self.ventana.bind('<I>', aceptar_sugerencia_ia)
+
                     self.sugerenciaIA.set(res)
                 
                 self.ventana.after(0, update_ui_ia)
@@ -909,7 +948,7 @@ class Clasificador:
             self.btn_deshacer.config(state='normal', bg="#ed4245")
             
             if hasattr(self, 'lbl_historial'):
-                self.lbl_historial.config(text=f"📋 {len(self.historial_movimientos)} movimientos")
+                self.lbl_historial.config(text=f"{len(self.historial_movimientos)} movimientos")
             
             if self.lista:
                 self.indiceActual %= len(self.lista)
