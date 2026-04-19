@@ -64,7 +64,7 @@ class Clasificador:
         self.carpetaOrigen = ""
         self.carpetaDestino = ''
         self.carpetasDestino = {}
-        self.imagenValida = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
+        self.imagenValida = ('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.heic', '.heif')
         self.videoValido = ('.mp4', '.avi', '.mov', '.mkv')
         self.historial_movimientos = []
         self.MAX_HISTORIAL = 50
@@ -107,6 +107,7 @@ class Clasificador:
 
         # Deshacer (Ctrl + Z)
         def atajo_deshacer(event=None):
+            if event and event.widget.winfo_class() in ('Entry', 'Text'): return
             # Seguridad: Solo ejecuta la acción si el botón está habilitado
             # (es decir, si realmente hay algo en el historial para deshacer)
             if self.btn_deshacer['state'] == 'normal':
@@ -165,18 +166,18 @@ class Clasificador:
         self.entry_filtro.pack(side='left', fill='x', expand=True, ipady=5)
 
         # Placeholder text
-        self.entry_filtro.insert(0, "Buscar carpeta...")
+        self.entry_filtro.insert(0, "Buscar Carpeta...")
         self.entry_filtro.config(fg="#8e8e93")
 
         # Eventos para el placeholder
         def on_entry_click(event):
-            if self.entry_filtro.get() == "Buscar carpeta...":
+            if self.entry_filtro.get() == "Buscar Carpeta...":
                 self.entry_filtro.delete(0, "end")
                 self.entry_filtro.config(fg="white")
 
         def on_focusout(event):
             if self.entry_filtro.get() == "":
-                self.entry_filtro.insert(0, "Buscar carpeta...")
+                self.entry_filtro.insert(0, "Buscar Carpeta...")
                 self.entry_filtro.config(fg="#8e8e93")
 
         self.entry_filtro.bind('<FocusIn>', on_entry_click)
@@ -242,6 +243,23 @@ class Clasificador:
         self.lbl_nombre_archivo = Label(self.frame_info_centro, text="...", 
                                         bg=COLOR_BG, fg=COLOR_TEXT_SEC, font=("Segoe UI", 9))
         self.lbl_nombre_archivo.pack(side='top')
+
+        # Quitar el foco del buscador al hacer clic fuera
+        def quitar_foco(event):
+            try:
+                elemento_actual = self.ventana.focus_get()
+
+                # Si el foco no está en un Entry o Text, NO hacemos nada.
+                if not elemento_actual or elemento_actual.winfo_class() not in ('Entry', 'Text'): return
+
+                # Validamos que el clic haya sido en la ventana principal.
+                if event.widget.winfo_toplevel() == self.ventana:
+                    # Si dimos clic en algo que NO es un Entry, le quitamos el foco
+                    if event.widget.winfo_class() not in ('Entry', 'Text'):
+                        self.ventana.after(10, self.ventana.focus_set)
+            except Exception: pass  # Silenciar errores fantasma si se cierra una ventana de golpe
+
+        self.ventana.bind_all("<Button-1>", quitar_foco)
 
     def btn_crear_moderno(self, parent, text, command, bg_color, ruta_imagen=None):
         btn = Button(parent, text=text, command=command, 
@@ -335,43 +353,48 @@ class Clasificador:
         self.ventana.update_idletasks()
         
     def aplicar_filtro(self):
-        """Filtra los botones de carpetas según el texto del filtro"""
-        texto_busqueda = self.filtro_texto.get().lower()
-        
-        if texto_busqueda == "Buscar Carpeta...":
-            texto_busqueda = ""
-        
+        """Filtra los botones de carpetas ocultando las que no coinciden"""
+        texto_busqueda = self.filtro_texto.get().lower().strip()
+
+        # Ignorar el placeholder
+        if texto_busqueda == "buscar carpeta...": texto_busqueda = ""
+
+        hayResultados = False
+
+        # Ocultamos todos los botones y destruimos etiquetas viejas primero.
         for widget in self.scrollFrame.winfo_children():
-            widget.destroy()
-        
-        if not self.carpetasDestino:
-            Label(self.scrollFrame, text="No hay subcarpetas", 
-                bg=COLOR_SIDEBAR, fg="gray").pack(pady=10)
-            return
-        
-        self._bind_mouse_scroll(self.scrollFrame)
-        
-        carpetas_filtradas = []
-        for carpeta in sorted(self.carpetasDestino.keys()):
-            if texto_busqueda in carpeta.lower():
-                carpetas_filtradas.append(carpeta)
-        
-        if carpetas_filtradas:
-            for carpeta in carpetas_filtradas:
-                self.btn_crear_categoria(self.scrollFrame, carpeta, 
-                                        lambda c=carpeta: self.clasificar(c))
-        else:
-            Label(self.scrollFrame, text=f"No se encontró '{texto_busqueda}'", 
-                bg=COLOR_SIDEBAR, fg="#faa61a", font=("Segoe UI", 9)).pack(pady=20)
-        
+            if isinstance(widget, Label):
+                widget.destroy()
+            elif isinstance(widget, Button):
+                widget.pack_forget()  # Los quitamos de la vista temporalmente
+
+        # Mostrar solo los que coinciden
+        for widget in self.scrollFrame.winfo_children():
+            if isinstance(widget, Button):
+                textoBoton = widget.cget("text").lower()
+
+                # Si coincide (o si la búsqueda está vacía), lo volvemos a empacar
+                if texto_busqueda in textoBoton:
+                    widget.pack(fill='x', padx=2, pady=1)
+                    hayResultados = True
+
+        # Mensaje de "No se encontró"
+        if not hayResultados and self.carpetasDestino and texto_busqueda:
+            Label(self.scrollFrame, text=f"No se encontró '{texto_busqueda}'",
+                  bg=COLOR_SIDEBAR, fg="#faa61a", font=("Segoe UI", 9)).pack(pady=20)
+
+        # Actualizar la zona de scroll
         self.canvas.config(scrollregion=self.canvas.bbox('all'))
 
     def limpiar_filtro(self):
-        """Limpia el campo de búsqueda"""
+        """Limpia el campo de búsqueda sin romper el foco"""
+        # Quitamos el foco y lo pasamos a la ventana
+        self.ventana.focus_set()
+        # Reseteamos el texto y color al estado inactivo
         self.entry_filtro.delete(0, "end")
-        self.entry_filtro.insert(0, "Buscar carpeta...")
+        self.entry_filtro.insert(0, "Buscar Carpeta...")
         self.entry_filtro.config(fg="#8e8e93")
-        self.filtro_texto.set("")
+        # Forzamos la actualización visual para volver a mostrar los elementos
         self.entry_filtro.focus()
 
     def seleccionarCarpeta(self):
@@ -402,24 +425,24 @@ class Clasificador:
 
     def mostrarContenido(self):
         if not self.lista: return
-        
         self.current_job_id += 1
         job_id = self.current_job_id
-        
         contenido = self.lista[self.indiceActual]
         ext = os.path.splitext(contenido)[1].lower()
         nombre_archivo = os.path.basename(contenido)
 
-        def atajoRecorte(event = None):
+        def atajoRecorte(event=None):
+            if event and event.widget.winfo_class() in ('Entry', 'Text'): return
             if ext in self.imagenValida: self.abrirEditor(contenido)
             elif ext in self.videoValido: self.abrirEditorVideo(contenido)
-        
+
         if not self.es_archivo_icloud_descargado(contenido):
             self.ventana.unbind('<r>')
             self.ventana.unbind('<R>')
             self.etiquetaElemento.config(
-                image="", 
-                text=f"Archivo descargándose desde iCloud\n\n{nombre_archivo}\n\nEspera un momento..."
+                image="",
+                text=f"Archivo descargándose desde iCloud\n\n{nombre_archivo}\n\nEspera un momento...",
+                compound="none"
             )
             self.lbl_contador.config(text=f"{self.indiceActual + 1} / {len(self.lista)}")
             self.lbl_nombre_archivo.config(text=nombre_archivo + " (descargando...)")
@@ -428,11 +451,11 @@ class Clasificador:
 
         self.ventana.bind('<r>', atajoRecorte)
         self.ventana.bind('<R>', atajoRecorte)
-        
+
         self.lbl_contador.config(text=f"{self.indiceActual + 1} / {len(self.lista)}")
         self.lbl_nombre_archivo.config(text=nombre_archivo)
         self.ventana.update_idletasks()
-        
+
         w_frame = self.frame_imagen.winfo_width()
         h_frame = self.frame_imagen.winfo_height()
         if w_frame < 50: w_frame = 800
@@ -444,21 +467,27 @@ class Clasificador:
         if ext in self.imagenValida:
             try:
                 img = Image.open(contenido)
+                if img.mode != 'RGB': img = img.convert('RGB')
                 img.thumbnail((w_frame, h_frame), Image.Resampling.LANCZOS)
                 foto = ImageTk.PhotoImage(img)
-                self.etiquetaElemento.config(image=foto, text="")
+                self.etiquetaElemento.config(image=foto, text="", compound="none")
                 self.etiquetaElemento.image = foto
-                
+
                 btn_edit = self.btn_crear_moderno(
-                    self.frame_imagen, 
+                    self.frame_imagen,
                     text="Recortar Imagen (R)",
-                    command=lambda: self.abrirEditor(contenido), 
-                    bg_color="#40444b", 
+                    command=lambda: self.abrirEditor(contenido),
+                    bg_color="#40444b",
                     ruta_imagen="iconos/recortarIcono.png")
                 btn_edit.place(relx=0.95, rely=0.05, anchor="ne")
-            except:
-                self.etiquetaElemento.config(image="", text="Error al cargar imagen")
-                
+            except Exception as e:
+                self.etiquetaElemento.config(
+                    image="",
+                    text=f"No se pudo cargar la imagen:\n\n{e}",
+                    compound="none",
+                    fg="#ed4245"
+                )
+
         elif ext in self.videoValido:
             cap = cv2.VideoCapture(contenido)
             ret, frame = cap.read()
@@ -468,33 +497,75 @@ class Clasificador:
                 img_pil = Image.fromarray(frame)
                 img_pil.thumbnail((w_frame, h_frame))
                 foto = ImageTk.PhotoImage(img_pil)
-                self.etiquetaElemento.config(image=foto, text="")
+                self.etiquetaElemento.config(image=foto, text="", compound="none")
                 self.etiquetaElemento.image = foto
-                
+
                 btn_play = self.btn_crear_moderno(
-                    self.frame_imagen, 
-                    text="REPRODUCIR", 
-                    command=lambda: self.reproducirVideo(contenido), 
-                    bg_color=COLOR_ACCENT, 
+                    self.frame_imagen,
+                    text="REPRODUCIR",
+                    command=lambda: self.reproducirVideo(contenido),
+                    bg_color=COLOR_ACCENT,
                     ruta_imagen="iconos/play.png")
                 btn_play.place(relx=0.5, rely=0.9, anchor="center")
-                
+
                 btn_crop = self.btn_crear_moderno(
-                    self.frame_imagen, 
-                    text="Recortar Video (",
-                    command=lambda: self.abrirEditorVideo(contenido), 
-                    bg_color="#40444b", 
+                    self.frame_imagen,
+                    text="Recortar Video (R)",
+                    command=lambda: self.abrirEditorVideo(contenido),
+                    bg_color="#40444b",
                     ruta_imagen="iconos/recortarIcono.png")
                 btn_crop.place(relx=0.95, rely=0.05, anchor="ne")
             else:
-                self.etiquetaElemento.config(text="Video sin vista previa", image="")
-        
+                self.etiquetaElemento.config(text="Video sin vista previa", image="", compound="none")
+
+        # Manejo de Documentos (PDF, EXCEL, OTROS)
+        else:
+            # Quitamos el atajo de recorte porque no aplica a documentos
+            self.ventana.unbind('<r>')
+            self.ventana.unbind('<R>')
+
+            # Textos e íconos por defecto
+            texto_mostrar = f"Este archivo es un {ext.upper()}"
+            ruta_icono = "iconos/txt.png"
+
+            # Personalización según extensión
+            if ext == '.pdf':
+                texto_mostrar = "Este archivo es un PDF"
+                ruta_icono = "iconos/pdf.png"
+            elif ext in ('.xls', '.xlsx', '.csv'):
+                texto_mostrar = "Este archivo es un EXCEL"
+                ruta_icono = "iconos/excel.png"
+
+            # Intentar cargar el ícono
+            try:
+                if os.path.exists(ruta_icono):
+                    img_doc = Image.open(ruta_icono).resize((120, 120), Image.Resampling.LANCZOS)
+                    foto_doc = ImageTk.PhotoImage(img_doc)
+                    self.etiquetaElemento.config(
+                        image=foto_doc,
+                        text=f"{texto_mostrar}\n\n{nombre_archivo}",
+                        compound="top",  # Pone la imagen arriba del texto
+                        font=("Segoe UI", 12, "bold"),
+                        fg="#b9bbbe"
+                    )
+                    self.etiquetaElemento.image = foto_doc
+                else:
+                    self.etiquetaElemento.config(
+                        image="",
+                        text=f"{texto_mostrar}\n\n{nombre_archivo}\n(Icono '{ruta_icono}' no encontrado)",
+                        compound="none",
+                        font=("Segoe UI", 12, "bold"),
+                        fg="#b9bbbe"
+                    )
+            except:
+                self.etiquetaElemento.config(image="", text=f"{texto_mostrar}\n\n{nombre_archivo}", compound="none")
+
         self.btn_accion_ia.pack_forget()
         self.card_ia.config(bg="#202225")
-        
+
         if self.ia:
             self.sugerenciaIA.set("Analizando...")
-            
+
             def iniciarAnalisisDelay():
                 time.sleep(0.3)
                 if job_id == self.current_job_id:
@@ -503,11 +574,10 @@ class Clasificador:
                         args=(contenido, job_id),
                         daemon=True
                     ).start()
-            
+
             # Ejecutar en un thread separado
             threading.Thread(target=iniciarAnalisisDelay, daemon=True).start()
-        else: 
-            self.sugerenciaIA.set("IA Inactiva")
+        else: self.sugerenciaIA.set("IA Inactiva")
             
     def abrirEditor(self, image_path):
         """Abre el editor de imágenes con manejo de errores mejorado"""
@@ -534,11 +604,7 @@ class Clasificador:
             width, height = test_img.size
             test_img.close()
             
-            if width == 0 or height == 0: 
-                raise Exception("La imagen no tiene dimensiones válidas")
-                
-            print(f"✓ Imagen válida: {width}x{height}px")
-            
+            if width == 0 or height == 0: raise Exception("La imagen no tiene dimensiones válidas")
         except Exception as e:
             messagebox.showerror("Error", 
                 f"No se puede abrir la imagen:\n{str(e)}\n\n"
@@ -808,6 +874,7 @@ class Clasificador:
                             self.btn_accion_ia.pack(fill='x', pady=5)
 
                             def aceptar_sugerencia_ia(event=None):
+                                if event and event.widget.winfo_class() in ('Entry', 'Text'): return
                                 # Medida de seguridad: Validar que el usuario no haya cambiado de imagen
                                 if job_id == self.current_job_id:
                                     self.clasificar(nombre_carpeta)
@@ -982,7 +1049,7 @@ class Clasificador:
         top.configure(bg=COLOR_BG)
         Label(top, text="Nombre de la carpeta:", bg=COLOR_BG, fg="white").pack(pady=10)
         entry = Entry(top); entry.pack(pady=5); entry.focus()
-        def confirmar():
+        def confirmar(event = None):
             nombre = entry.get()
             if nombre:
                 path = os.path.join(self.carpetaDestino, nombre)
@@ -992,6 +1059,7 @@ class Clasificador:
                     self.actualizarBotones()
                     top.destroy()
                 except Exception as e: messagebox.showerror("Error", str(e))
+        top.bind('<Return>', confirmar)
         Button(top, text="Crear", command=confirmar, bg=COLOR_SUCCESS, fg="white", bd=0, padx=10, pady=5).pack(pady=10)
 
     def abrir_menu_herramientas(self):
