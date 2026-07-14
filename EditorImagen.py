@@ -20,6 +20,7 @@ class EditorImagen:
         self.modo_video = modo_video
         self.window = Toplevel(master)
         self.window.title("Recortar Imagen" if not modo_video else "Recortar Video")
+        self.window.bind('<Escape>', lambda e: self.cancelar())
         self.window.configure(bg="#1c1c1e")
 
         # Maximizar ventana

@@ -122,6 +122,54 @@ class Clasificador:
             self.ventana.bind('<Command-z>', atajo_deshacer)
             self.ventana.bind('<Command-Z>', atajo_deshacer)
 
+        # Atajos para las Flechas de Navegación
+        def atajo_anterior(event=None):
+            if event and event.widget.winfo_class() in ('Entry', 'Text'): return
+            self.anteriorElemento()
+
+        def atajo_siguiente(event=None):
+            if event and event.widget.winfo_class() in ('Entry', 'Text'): return
+            self.siguienteElemento()
+
+        self.ventana.bind('<Left>', atajo_anterior)
+        self.ventana.bind('<Right>', atajo_siguiente)
+
+        # Información y Eliminación del Archivo
+        self.frameArchivoActual = Frame(self.panel_izquierdo, bg="#202225", padx=10, pady=10)
+        # side='bottom' asegura que siempre se quede pegado abajo
+        self.frameArchivoActual.pack(side='bottom', fill='x', padx=10, pady=20)
+
+        Label(self.frameArchivoActual, text="📄 ARCHIVO ACTUAL", bg="#202225", fg=COLOR_TEXT_SEC,
+              font=("Arial", 8, "bold")).pack(anchor="w", pady=(0, 5))
+
+        # wraplength=210 permite que los nombres largos hagan salto de línea automáticamente
+        self.lbl_nombre_archivo = Label(self.frameArchivoActual, text="...", bg="#202225", fg="white",
+                                        font=("Segoe UI", 9), wraplength=210, justify="left")
+        self.lbl_nombre_archivo.pack(anchor="w", pady=(0, 10))
+
+        self.btnEliminar = Button(
+            self.frameArchivoActual,
+            text="Eliminar (Supr)",
+            command=self.eliminarArchivoActual,
+            bg="#ed4245",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            bd=0,
+            padx=10,
+            pady=8,
+            cursor=self.cursor
+        )
+        self.btnEliminar.pack(fill='x')
+
+        # Atajos de teclado para eliminar
+        def atajoEliminar(event=None):
+            if event and event.widget.winfo_class() in ('Entry', 'Text'):
+                return
+            self.eliminarArchivoActual()
+
+        self.ventana.bind('<Delete>', atajoEliminar)
+        self.ventana.bind('<BackSpace>', atajoEliminar)
+
         self.panel_derecho = Frame(self.ventana, bg=COLOR_SIDEBAR, width=280)
         self.panel_derecho.pack(side='right', fill='y')
         self.panel_derecho.pack_propagate(False)
@@ -238,11 +286,7 @@ class Clasificador:
         
         self.lbl_contador = Label(self.frame_info_centro, text="0 / 0", 
                                   bg=COLOR_BG, fg="white", font=("Segoe UI", 18, "bold"))
-        self.lbl_contador.pack(side='top', pady=(5, 0))
-        
-        self.lbl_nombre_archivo = Label(self.frame_info_centro, text="...", 
-                                        bg=COLOR_BG, fg=COLOR_TEXT_SEC, font=("Segoe UI", 9))
-        self.lbl_nombre_archivo.pack(side='top')
+        self.lbl_contador.pack(expand=True)
 
         # Quitar el foco del buscador al hacer clic fuera
         def quitar_foco(event):
@@ -436,6 +480,23 @@ class Clasificador:
             if ext in self.imagenValida: self.abrirEditor(contenido)
             elif ext in self.videoValido: self.abrirEditorVideo(contenido)
 
+        def atajoReproducir(event=None):
+            if event and event.widget.winfo_class() in ('Entry', 'Text'): return
+            if ext in self.videoValido: self.reproducirVideo(contenido)
+
+        # Quitamos los atajos temporalmente por seguridad
+        self.ventana.unbind('<r>')
+        self.ventana.unbind('<R>')
+        self.ventana.unbind('<p>')
+        self.ventana.unbind('<P>')
+
+        # Vinculamos R siempre, pero P solo si es video
+        self.ventana.bind('<r>', atajoRecorte)
+        self.ventana.bind('<R>', atajoRecorte)
+        if ext in self.videoValido:
+            self.ventana.bind('<p>', atajoReproducir)
+            self.ventana.bind('<P>', atajoReproducir)
+
         if not self.es_archivo_icloud_descargado(contenido):
             self.ventana.unbind('<r>')
             self.ventana.unbind('<R>')
@@ -502,7 +563,7 @@ class Clasificador:
 
                 btn_play = self.btn_crear_moderno(
                     self.frame_imagen,
-                    text="REPRODUCIR",
+                    text="REPRODUCIR (P)",
                     command=lambda: self.reproducirVideo(contenido),
                     bg_color=COLOR_ACCENT,
                     ruta_imagen="iconos/play.png")
@@ -908,6 +969,52 @@ class Clasificador:
             self.indiceActual = (self.indiceActual - 1) % len(self.lista)
             self.mostrarContenido()
 
+    def eliminarArchivoActual(self):
+        if not self.lista:
+            return
+
+        archivoActual = self.lista[self.indiceActual]
+        nombreArchivo = os.path.basename(archivoActual)
+
+        confirmacion = messagebox.askyesno(
+            "Confirmar Eliminación",
+            f"¿Estás seguro de que deseas eliminar permanentemente este archivo del disco?\n\n{nombreArchivo}"
+        )
+
+        if confirmacion:
+            try:
+                # Si el archivo es un video y se está reproduciendo, forzamos su cierre
+                # para que el sistema operativo libere el archivo y nos permita borrarlo.
+                if hasattr(self, 'video_activo') and self.video_activo:
+                    try:
+                        self.cerrarVideoCompletamente()
+                    except:
+                        pass
+
+                # Eliminación permanente del sistema
+                os.remove(archivoActual)
+
+                # Sacamos el archivo de nuestra lista en memoria
+                self.lista.pop(self.indiceActual)
+
+                # Refrescamos la vista
+                if self.lista:
+                    self.indiceActual %= len(self.lista)
+                    self.mostrarContenido()
+                else:
+                    # Si borramos el último archivo disponible
+                    self.etiquetaElemento.config(image="", text="No hay más archivos.", compound="none")
+                    self.lbl_contador.config(text="0 / 0")
+                    self.lbl_nombre_archivo.config(text="...")
+                    self.btn_accion_ia.pack_forget()
+                    self.sugerenciaIA.set("-")
+
+            except Exception as errorEliminacion:
+                messagebox.showerror(
+                    "Error de Sistema",
+                    f"No se pudo eliminar el archivo. Puede que esté abierto en otro programa:\n\n{errorEliminacion}"
+                )
+
     def clasificar(self, carpeta):
         if not self.lista: return
         contenido = self.lista[self.indiceActual]
@@ -1042,6 +1149,7 @@ class Clasificador:
             return
         top = Toplevel(self.ventana)
         top.title("Nueva Carpeta")
+        top.bind('<Escape>', lambda e: top.destroy())
         w_pop, h_pop = 300, 150
         x = self.ventana.winfo_screenwidth() // 2 - w_pop // 2
         y = self.ventana.winfo_screenheight() // 2 - h_pop // 2
@@ -1065,6 +1173,7 @@ class Clasificador:
     def abrir_menu_herramientas(self):
         top = Toplevel(self.ventana)
         top.title("Herramientas Avanzadas")
+        top.bind('<Escape>', lambda e: top.destroy())
         w_pop, h_pop = 450, 500
         x = self.ventana.winfo_screenwidth() // 2 - w_pop // 2
         y = self.ventana.winfo_screenheight() // 2 - h_pop // 2
@@ -1175,14 +1284,16 @@ class Clasificador:
         popupVideo = Toplevel(self.ventana)
         self.popup_video_actual = popupVideo
         self.ruta_video_actual = rutaVideo  # Guardar ruta
-        
+
         popupVideo.title('Reproductor')
+        popupVideo.bind('<Escape>', lambda e: self.cerrarVideoCompletamente())
         popupVideo.configure(bg="black")
-        
+
         w_pop, h_pop = 800, 1000
         x = self.ventana.winfo_screenwidth() // 2 - w_pop // 2
         y = self.ventana.winfo_screenheight() // 2 - h_pop // 2
         popupVideo.geometry(f'{w_pop}x{h_pop}+{x}+{y}')
+        popupVideo.focus_set()
         
         etiquetaVideo = Label(popupVideo, bg="black")
         etiquetaVideo.pack(fill='both', expand=True)
