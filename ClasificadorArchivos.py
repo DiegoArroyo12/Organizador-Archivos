@@ -18,6 +18,7 @@ try:
     from pillow_heif import register_heif_opener
     register_heif_opener()
     print("Soporte HEIC Activado")
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 except:
     print("Sin soporte HEIC (instala: pip install pillow-heif)")
 
@@ -64,7 +65,7 @@ class Clasificador:
         self.carpetaOrigen = ""
         self.carpetaDestino = ''
         self.carpetasDestino = {}
-        self.imagenValida = ('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.heic', '.heif')
+        self.imagenValida = ('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.heic', '.heif', '.bmp')
         self.videoValido = ('.mp4', '.avi', '.mov', '.mkv')
         self.historial_movimientos = []
         self.MAX_HISTORIAL = 50
@@ -86,8 +87,8 @@ class Clasificador:
 
         Label(self.panel_izquierdo, text="CONFIGURACIÓN", bg=COLOR_SIDEBAR, fg=COLOR_TEXT_SEC, font=("Arial", 8, "bold")).pack(pady=(20, 5), anchor="w", padx=15)
         
-        self.btn_crear_moderno(self.panel_izquierdo, "Origen", self.seleccionarCarpeta, COLOR_ACCENT, ruta_imagen="iconos/carpetaIcono.png")
-        self.btn_crear_moderno(self.panel_izquierdo, "Destino (IA)", self.carpetaPrincipalDestino, COLOR_ACCENT, ruta_imagen="iconos/carpetaIcono.png")
+        self.crearBotonModerno(self.panel_izquierdo, "Origen", self.seleccionarCarpeta, COLOR_ACCENT, rutaImagen="iconos/carpetaIcono.png")
+        self.crearBotonModerno(self.panel_izquierdo, "Destino (IA)", self.carpetaPrincipalDestino, COLOR_ACCENT, rutaImagen="iconos/carpetaIcono.png")
         
         self.check_autoclose = Checkbutton(self.panel_izquierdo, text="Auto-Cerrar Videos", variable=self.var_autoclose,
                                            bg=COLOR_SIDEBAR, fg="white", selectcolor=COLOR_BG, activebackground=COLOR_SIDEBAR, activeforeground="white",
@@ -97,11 +98,11 @@ class Clasificador:
         Frame(self.panel_izquierdo, bg="#40444b", height=1).pack(fill='x', padx=15, pady=15)
         
         Label(self.panel_izquierdo, text="ACCIONES", bg=COLOR_SIDEBAR, fg=COLOR_TEXT_SEC, font=("Arial", 8, "bold")).pack(pady=(5, 5), anchor="w", padx=15)
-        self.btn_crear_moderno(self.panel_izquierdo, "Nueva Carpeta", self.nuevaCarpetaPopup, "#4f545c", ruta_imagen="iconos/agregarIcono.png")
-        self.btn_crear_moderno(self.panel_izquierdo, "Herramientas", self.abrir_menu_herramientas, COLOR_WARNING, ruta_imagen="iconos/herramientasIcono.png")
+        self.crearBotonModerno(self.panel_izquierdo, "Nueva Carpeta", self.nuevaCarpetaPopup, "#4f545c", rutaImagen="iconos/agregarIcono.png")
+        self.crearBotonModerno(self.panel_izquierdo, "Herramientas", self.abrir_menu_herramientas, colorFondo=COLOR_WARNING, rutaImagen="iconos/herramientasIcono.png")
 
-        self.btn_deshacer = self.btn_crear_moderno(self.panel_izquierdo, "Deshacer Último", self.deshacer_ultimo_movimiento, '#ed4245', ruta_imagen="iconos/deshacer.png")
-        self.btn_deshacer.config(state='disabled', bg='#4f545c')
+        self.btn_deshacer = self.crearBotonModerno(self.panel_izquierdo, "Deshacer Último", self.deshacer_ultimo_movimiento, '#ed4245', rutaImagen="iconos/deshacer.png")
+        self.btn_deshacer.config(state='disabled')
         self.lbl_historial = Label(self.panel_izquierdo, text="0 movimientos", bg=COLOR_SIDEBAR, fg="#8e8e93", font=("Segoe UI", 8))
         self.lbl_historial.pack(anchor="w", padx=15, pady=(0,5))
 
@@ -194,6 +195,19 @@ class Clasificador:
 
         self.btn_accion_ia = Button(self.card_ia, text="Mover Aquí", bg=COLOR_ACCENT, fg="white", 
                                     font=("Segoe UI", 9, "bold"), bd=0, padx=10, pady=5, cursor=self.cursor)
+
+        self.botonRecalcular = Button(
+            self.card_ia,
+            text="Recalcular Memoria IA",
+            command=self.recalcularMemoriaIA,
+            bg="#f44336",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            bd=0,
+            padx=10,
+            pady=5,
+            cursor=self.cursor
+        )
         
         #  Campo de búsqueda/filtro
         Label(self.panel_derecho, text="CLASIFICAR EN:", bg=COLOR_SIDEBAR, fg=COLOR_TEXT_SEC, 
@@ -205,31 +219,33 @@ class Clasificador:
 
         # Variable para el texto del filtro
         self.filtro_texto = StringVar()
-        self.filtro_texto.trace('w', lambda *args: self.aplicar_filtro())
+        self.filtro_texto.trace_add('write', lambda *args: self.aplicarFiltro())
 
         # Entry de búsqueda
-        self.entry_filtro = Entry(self.frame_filtro, textvariable=self.filtro_texto,
+        self.entryFiltro = Entry(self.frame_filtro, textvariable=self.filtro_texto,
                                 bg="#40444b", fg="white", font=("Segoe UI", 10),
                                 bd=0, insertbackground="white", relief="flat")
-        self.entry_filtro.pack(side='left', fill='x', expand=True, ipady=5)
+        self.entryFiltro.pack(side='left', fill='x', expand=True, ipady=5)
 
         # Placeholder text
-        self.entry_filtro.insert(0, "Buscar Carpeta...")
-        self.entry_filtro.config(fg="#8e8e93")
+        self.entryFiltro.insert(0, "Buscar Carpeta...")
+        self.entryFiltro.config(fg="#8e8e93")
 
         # Eventos para el placeholder
         def on_entry_click(event):
-            if self.entry_filtro.get() == "Buscar Carpeta...":
-                self.entry_filtro.delete(0, "end")
-                self.entry_filtro.config(fg="white")
+            if self.entryFiltro.get() == "Buscar Carpeta...":
+                self.entryFiltro.delete(0, "end")
+                self.entryFiltro.config(fg="white")
 
         def on_focusout(event):
-            if self.entry_filtro.get() == "":
-                self.entry_filtro.insert(0, "Buscar Carpeta...")
-                self.entry_filtro.config(fg="#8e8e93")
+            if self.entryFiltro.get() == "":
+                self.entryFiltro.insert(0, "Buscar Carpeta...")
+                self.entryFiltro.config(fg="#8e8e93")
 
-        self.entry_filtro.bind('<FocusIn>', on_entry_click)
-        self.entry_filtro.bind('<FocusOut>', on_focusout)
+        self.entryFiltro.bind('<FocusIn>', on_entry_click)
+        self.entryFiltro.bind('<FocusOut>', on_focusout)
+
+        self.entryFiltro.bind('<KeyRelease>', self.aplicarFiltro())
 
         # Botón para limpiar filtro
         self.btn_limpiar_filtro = Button(self.frame_filtro,
@@ -305,23 +321,37 @@ class Clasificador:
 
         self.ventana.bind_all("<Button-1>", quitar_foco)
 
-    def btn_crear_moderno(self, parent, text, command, bg_color, ruta_imagen=None):
-        btn = Button(parent, text=text, command=command, 
-                     bg=bg_color, fg="white", 
-                     font=FONT_BOLD, bd=0, padx=20, pady=12, 
-                     cursor=self.cursor, activebackground=bg_color, activeforeground="white")
-        if ruta_imagen and os.path.exists(ruta_imagen):
+    def crearBotonModerno(self, contenedorPadre, texto, comando, colorFondo="#36393f", rutaImagen=None):
+        boton = Button(
+            contenedorPadre,
+            text=texto,
+            command=comando,
+            bg=colorFondo,
+            fg="white",
+            font=FONT_BOLD,
+            bd=0,
+            padx=20,
+            pady=12,
+            cursor=self.cursor,
+            activebackground=colorFondo,
+            activeforeground="white"
+        )
+
+        if rutaImagen and os.path.exists(rutaImagen):
             try:
-                img = Image.open(ruta_imagen).resize((24, 24), Image.Resampling.LANCZOS)
-                foto = ImageTk.PhotoImage(img)
-                btn.config(image=foto, compound="left", padx=15)
-                btn.image = foto 
-            except: pass
-        btn.pack(fill='x', padx=15, pady=5)
-        def on_enter(e): btn['bg'] = self.adjust_color_lightness(bg_color, 1.2)
-        def on_leave(e): btn['bg'] = bg_color
-        btn.bind("<Enter>", on_enter); btn.bind("<Leave>", on_leave)
-        return btn
+                imagen = Image.open(rutaImagen).resize((24, 24), Image.Resampling.LANCZOS)
+                fotoTk = ImageTk.PhotoImage(imagen)
+                boton.config(image=fotoTk, compound="left", padx=15)
+                boton.image = fotoTk
+            except:
+                pass
+
+        boton.pack(fill='x', padx=15, pady=5)
+
+        boton.bind("<Enter>", lambda evento: boton.config(bg=self.adjust_color_lightness(colorFondo, 1.2)))
+        boton.bind("<Leave>", lambda evento: boton.config(bg=colorFondo))
+
+        return boton
 
     def btn_crear_nav(self, parent, text, command, side, ruta_imagen=None, iconSide='left'):
         btn = Button(parent, text=text, command=command, bg="#40444b", fg="white", font=("Segoe UI", 12), bd=0, padx=30, pady=5, cursor=self.cursor)
@@ -338,7 +368,7 @@ class Clasificador:
         btn.bind("<Enter>", on_enter); btn.bind("<Leave>", on_leave)
 
     def btn_crear_categoria(self, parent, text, command):
-        btn = self.btn_crear_moderno(parent, text=f"{text}", command=command, bg_color="#36393f", ruta_imagen="iconos/carpetaIcono.png")
+        btn = self.crearBotonModerno(parent, f"{text}", command, "#36393f", "iconos/carpetaIcono.png")
         btn.pack(fill='x', padx=2, pady=1)
         self._bind_mouse_scroll(btn) 
         def on_enter(e): btn['bg'] = COLOR_ACCENT; btn['fg'] = "white"
@@ -364,16 +394,137 @@ class Clasificador:
         elif event.num == 5 or event.delta < 0: self.canvas.yview_scroll(1, "units")
 
     def actualizarBotones(self):
-        """Actualiza la lista de botones"""
-        self.aplicar_filtro()
+        """Actualiza la lista de carpetas agregando un botón de vista previa."""
         for widget in self.scrollFrame.winfo_children(): widget.destroy()
         if not self.carpetasDestino:
             Label(self.scrollFrame, text="No hay subcarpetas", bg=COLOR_SIDEBAR, fg="gray").pack(pady=10)
             return
+
         self._bind_mouse_scroll(self.scrollFrame)
+
         for carpeta in sorted(self.carpetasDestino.keys()):
-            self.btn_crear_categoria(self.scrollFrame, carpeta, lambda c=carpeta: self.clasificar(c))
+            btnCarpeta = self.crearBotonModerno(
+                self.scrollFrame,
+                f"{carpeta}",
+                comando=lambda c=carpeta: self.clasificar(c),
+                rutaImagen="iconos/carpetaIcono.png"
+            )
+            btnCarpeta.pack(fill='x', padx=2, pady=1)
+
+            # Eventos de clic derecho para abrir vista previa
+            btnCarpeta.bind("<Button-3>", lambda e, c=carpeta: self.mostrarVistaPrevia(c))
+            btnCarpeta.bind("<Button-2>", lambda e, c=carpeta: self.mostrarVistaPrevia(c))
+
+            self._bind_mouse_scroll(btnCarpeta)
+
+            def onEnter(e, btn=btnCarpeta):
+                btn['bg'] = COLOR_ACCENT
+                btn['fg'] = "white"
+
+            def onLeave(e, btn=btnCarpeta):
+                btn['bg'] = "#36393f"
+                btn['fg'] = "#dcddde"
+
+            btnCarpeta.bind("<Enter>", onEnter, add='+')
+            btnCarpeta.bind("<Leave>", onLeave, add='+')
+
         self.canvas.config(scrollregion=self.canvas.bbox('all'))
+
+    def mostrarVistaPrevia(self, nombreCarpeta):
+        """Abre un popup ultrarápido mostrando hasta 5 imágenes de la carpeta."""
+        rutaCarpeta = self.carpetasDestino[nombreCarpeta]
+
+        archivosImagen = [os.path.join(rutaCarpeta, f) for f in os.listdir(rutaCarpeta)
+                          if f.lower().endswith(self.imagenValida) and not f.startswith("._")]
+
+        if not archivosImagen:
+            messagebox.showinfo("Vista Previa", f"La carpeta '{nombreCarpeta}' no tiene imagenes aun.")
+            return
+
+        popup = Toplevel(self.ventana)
+        popup.title(f"Referencias de {nombreCarpeta}")
+        popup.configure(bg=COLOR_BG)
+        popup.resizable(False, False)
+        popup.bind('<Escape>', lambda e: popup.destroy())
+
+        Label(popup, text=f"Primeras imagenes en {nombreCarpeta}",
+              bg=COLOR_BG, fg="white", font=FONT_BOLD).pack(pady=10)
+
+        galeriaFrame = Frame(popup, bg=COLOR_BG)
+        galeriaFrame.pack(pady=10, padx=10)
+
+        popup.listaFotos = []
+
+        # Bucle de carga y escalado optimizado
+        for imgPath in archivosImagen[:5]:
+            try:
+                imgOpen = Image.open(imgPath)
+                if imgOpen.mode != 'RGB':
+                    imgOpen = imgOpen.convert('RGB')
+
+                imgOpen.thumbnail((250, 250), Image.Resampling.LANCZOS)
+                fotoTk = ImageTk.PhotoImage(imgOpen)
+                popup.listaFotos.append(fotoTk)
+
+                lblImg = Label(galeriaFrame, image=fotoTk, bg="#000000", bd=2)
+                lblImg.pack(side='left', padx=5)
+            except Exception as e:
+                print(f"Error cargando miniatura: {e}")
+
+        # Logica de centrado dinamico
+        popup.update_idletasks()
+        anchoPop = popup.winfo_width()
+        altoPop = popup.winfo_height()
+        posicionX = self.ventana.winfo_screenwidth() // 2 - anchoPop // 2
+        posicionY = self.ventana.winfo_screenheight() // 2 - altoPop // 2
+        popup.geometry(f"+{posicionX}+{posicionY}")
+
+        # --- Botón para reentrenar la memoria de esta carpeta ---
+        def dispararReentrenamiento():
+            if not self.ia: return
+
+            # Cambiamos el texto para dar retroalimentación visual
+            btnReentrenar.config(text="Reentrenando...", state="disabled", bg="#faa61a")
+            self.ventana.update_idletasks()
+
+            # Ejecutamos en segundo plano para no congelar la UI
+            def hiloTrabajo():
+                self.ia.reentrenarCarpeta(nombreCarpeta)
+                self.ventana.after(0, lambda: [
+                    messagebox.showinfo("Éxito", f"Memoria de {nombreCarpeta} actualizada."),
+                    popup.destroy()
+                ])
+
+            threading.Thread(target=hiloTrabajo, daemon=True).start()
+
+        btnReentrenar = Button(
+            popup,
+            text="Reentrenar IA con esta carpeta",
+            command=dispararReentrenamiento,
+            bg="#5865F2", fg="white", font=("Segoe UI", 9, "bold"),
+            bd=0, padx=10, pady=5, cursor=self.cursor
+        )
+        btnReentrenar.pack(pady=(10, 5))
+
+    def recalcularMemoriaIA(self):
+        if not hasattr(self, 'ia') or not self.ia:
+            return
+
+        confirmacion = messagebox.askyesno(
+            "Recalcular Memoria",
+            "Deseas borrar la memoria actual y recalcular todas las referencias desde cero"
+        )
+
+        if confirmacion:
+            if os.path.exists(self.ia.archivoCache):
+                try:
+                    os.remove(self.ia.archivoCache)
+                except Exception as error:
+                    print(f"Error borrando cache {error}")
+
+            self.ia.knownEmbeddings.clear()
+            self.estado_carga_texto.set("Recalculando Motor IA")
+            self.ia.cargarReferenciasAsync()
 
     def actualizar_barra_ia(self, actual, total, texto=""):
         if actual == -1:
@@ -396,38 +547,43 @@ class Clasificador:
                     threading.Thread(target=self._predecir_actual, args=(self.lista[self.indiceActual], self.current_job_id), daemon=True).start()
         self.ventana.update_idletasks()
         
-    def aplicar_filtro(self):
-        """Filtra los botones de carpetas ocultando las que no coinciden"""
-        texto_busqueda = self.filtro_texto.get().lower().strip()
+    def aplicarFiltro(self, event=None):
+        if not hasattr(self, 'scrollFrame') or not hasattr(self, 'carpetasDestino'):
+            return
 
-        # Ignorar el placeholder
-        if texto_busqueda == "buscar carpeta...": texto_busqueda = ""
+        textoBusqueda = self.entryFiltro.get().lower().strip()
+
+        if textoBusqueda == "buscar carpeta...":
+            textoBusqueda = ""
 
         hayResultados = False
 
-        # Ocultamos todos los botones y destruimos etiquetas viejas primero.
+        # Primera fase Limpieza visual
         for widget in self.scrollFrame.winfo_children():
             if isinstance(widget, Label):
                 widget.destroy()
             elif isinstance(widget, Button):
-                widget.pack_forget()  # Los quitamos de la vista temporalmente
+                widget.pack_forget()
 
-        # Mostrar solo los que coinciden
+        # Segunda fase Reconstruccion en orden
         for widget in self.scrollFrame.winfo_children():
             if isinstance(widget, Button):
                 textoBoton = widget.cget("text").lower()
 
-                # Si coincide (o si la búsqueda está vacía), lo volvemos a empacar
-                if texto_busqueda in textoBoton:
+                if textoBusqueda in textoBoton:
                     widget.pack(fill='x', padx=2, pady=1)
                     hayResultados = True
 
-        # Mensaje de "No se encontró"
-        if not hayResultados and self.carpetasDestino and texto_busqueda:
-            Label(self.scrollFrame, text=f"No se encontró '{texto_busqueda}'",
-                  bg=COLOR_SIDEBAR, fg="#faa61a", font=("Segoe UI", 9)).pack(pady=20)
+        # Validacion de resultados nulos
+        if not hayResultados and self.carpetasDestino and textoBusqueda:
+            Label(
+                self.scrollFrame,
+                text=f"No se encontro: {textoBusqueda}",
+                bg="#2f3136",
+                fg="#faa61a",
+                font=("Segoe UI", 9)
+            ).pack(pady=20)
 
-        # Actualizar la zona de scroll
         self.canvas.config(scrollregion=self.canvas.bbox('all'))
 
     def limpiar_filtro(self):
@@ -435,11 +591,11 @@ class Clasificador:
         # Quitamos el foco y lo pasamos a la ventana
         self.ventana.focus_set()
         # Reseteamos el texto y color al estado inactivo
-        self.entry_filtro.delete(0, "end")
-        self.entry_filtro.insert(0, "Buscar Carpeta...")
-        self.entry_filtro.config(fg="#8e8e93")
+        self.entryFiltro.delete(0, "end")
+        self.entryFiltro.insert(0, "Buscar Carpeta...")
+        self.entryFiltro.config(fg="#8e8e93")
         # Forzamos la actualización visual para volver a mostrar los elementos
-        self.entry_filtro.focus()
+        self.entryFiltro.focus()
 
     def seleccionarCarpeta(self):
         self.carpetaOrigen = filedialog.askdirectory(title='Seleccione Carpeta Origen')
@@ -450,15 +606,15 @@ class Clasificador:
         if not self.carpetaDestino: return
         self.barra_carga['value'] = 0
         self.estado_carga_texto.set("Iniciando Motor IA...")
-        self.ia = FaceBrain(self.carpetaDestino, log_callback=print, progress_callback=self.actualizar_barra_ia)
-        self.ia.cargar_referencias_async()
+        self.ia = FaceBrain(self.carpetaDestino, callbackLog=print, callbackProgreso=self.actualizar_barra_ia)
+        self.ia.cargarReferenciasAsync()
         self.carpetasDestino = {f: os.path.join(self.carpetaDestino, f) for f in os.listdir(self.carpetaDestino) if os.path.isdir(os.path.join(self.carpetaDestino, f))}
         self.actualizarBotones()
         
     def cargarElementos(self):
         if not self.carpetaOrigen: return
         try:
-            self.lista = [os.path.join(self.carpetaOrigen, f) for f in os.listdir(self.carpetaOrigen) if f.lower().endswith(self.imagenValida + self.videoValido)]
+            self.lista = [os.path.join(self.carpetaOrigen, f) for f in os.listdir(self.carpetaOrigen) if f.lower().endswith(self.imagenValida + self.videoValido) and not f.startswith('._')]
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo leer la carpeta: {e}")
             return
@@ -534,12 +690,12 @@ class Clasificador:
                 self.etiquetaElemento.config(image=foto, text="", compound="none")
                 self.etiquetaElemento.image = foto
 
-                btn_edit = self.btn_crear_moderno(
+                btn_edit = self.crearBotonModerno(
                     self.frame_imagen,
-                    text="Recortar Imagen (R)",
-                    command=lambda: self.abrirEditor(contenido),
-                    bg_color="#40444b",
-                    ruta_imagen="iconos/recortarIcono.png")
+                    "Recortar Imagen (R)",
+                    lambda: self.abrirEditor(contenido),
+                    "#40444b",
+                    "iconos/recortarIcono.png")
                 btn_edit.place(relx=0.95, rely=0.05, anchor="ne")
             except Exception as e:
                 self.etiquetaElemento.config(
@@ -561,20 +717,20 @@ class Clasificador:
                 self.etiquetaElemento.config(image=foto, text="", compound="none")
                 self.etiquetaElemento.image = foto
 
-                btn_play = self.btn_crear_moderno(
+                btn_play = self.crearBotonModerno(
                     self.frame_imagen,
-                    text="REPRODUCIR (P)",
-                    command=lambda: self.reproducirVideo(contenido),
-                    bg_color=COLOR_ACCENT,
-                    ruta_imagen="iconos/play.png")
+                    "REPRODUCIR (P)",
+                    lambda: self.reproducirVideo(contenido),
+                    COLOR_ACCENT,
+                    "iconos/play.png")
                 btn_play.place(relx=0.5, rely=0.9, anchor="center")
 
-                btn_crop = self.btn_crear_moderno(
+                btn_crop = self.crearBotonModerno(
                     self.frame_imagen,
-                    text="Recortar Video (R)",
-                    command=lambda: self.abrirEditorVideo(contenido),
-                    bg_color="#40444b",
-                    ruta_imagen="iconos/recortarIcono.png")
+                    "Recortar Video (R)",
+                    lambda: self.abrirEditorVideo(contenido),
+                    "#40444b",
+                    "iconos/recortarIcono.png")
                 btn_crop.place(relx=0.95, rely=0.05, anchor="ne")
             else:
                 self.etiquetaElemento.config(text="Video sin vista previa", image="", compound="none")
@@ -887,7 +1043,7 @@ class Clasificador:
                     if not os.path.exists(img_para_analisis): break
                     
                     try:
-                        res = self.ia.sugerir_persona(img_para_analisis)
+                        res = self.ia.sugerirPersona(img_para_analisis)
                         break  # Éxito
                     except Exception as e:
                         # Si es error de TensorFlow/Retval, reintentar
@@ -928,6 +1084,8 @@ class Clasificador:
                     else:
                         nombre_carpeta = res.split(" (")[0]
                         if nombre_carpeta in self.carpetasDestino:
+                            self.botonRecalcular.pack(fill='x', pady=5)
+
                             self.btn_accion_ia.config(
                                 text=f"Mover a: {nombre_carpeta} (I)",
                                 command=lambda: self.clasificar(nombre_carpeta)
@@ -1117,6 +1275,16 @@ class Clasificador:
                 self.historial_movimientos.pop(0)
             
             shutil.move(contenido, destino)
+
+            # Aprendizaje Activo
+            extension = os.path.splitext(contenido)[1].lower()
+            if hasattr(self, 'ia') and self.ia and extension in self.imagenValida:
+                # Usar un hilo secundario para evitar que la interfaz se congele
+                threading.Thread(
+                    target=self.ia.agregar_imagen_referencia,
+                    args=(carpeta, destino),
+                    daemon=True
+                ).start()
             
             self.lista.pop(self.indiceActual)
             self.btn_deshacer.config(state='normal', bg="#ed4245")
@@ -1128,7 +1296,7 @@ class Clasificador:
                 self.indiceActual %= len(self.lista)
                 self.mostrarContenido()
             else:
-                self.etiquetaElemento.config(image="", text="¡Carpeta terminada! 🎉")
+                self.etiquetaElemento.config(image="", text="¡Carpeta terminada!")
                 self.lbl_contador.config(text="0 / 0")
                 self.lbl_nombre_archivo.config(text="...")
                 self.sugerenciaIA.set("-")

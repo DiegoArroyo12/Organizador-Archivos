@@ -1,116 +1,327 @@
 import os
-import numpy as np
+import pickle
+import tempfile
 import threading
+import uuid
+import cv2
+import numpy as np
 from deepface import DeepFace
 
 class FaceBrain:
-    def __init__(self, output_dir, log_callback=None, progress_callback=None):
-        self.output_dir = output_dir
-        self.known_embeddings = {} 
-        self.log_callback = log_callback
-        self.progress_callback = progress_callback 
-        self.is_loading = False
-        self.model_name = "ArcFace"
-        self.detector_backend = "retinaface" 
-        self.threshold = 0.65 
+    def __init__(self, directorioSalida, callbackLog=None, callbackProgreso=None):
+        self.directorioSalida = directorioSalida
+        self.knownEmbeddings = {}
+        self.callbackLog = callbackLog
+        self.callbackProgreso = callbackProgreso
+        self.estaCargando = False
+        self.nombreModelo = "ArcFace"
+        self.backendDetector = "retinaface"
+        self.umbral = 0.65
+        self.umbralConfianza = 0.85
+        self.archivoCache = os.path.join(self.directorioSalida, "embeddingsCache.pkl")
 
-    def log(self, msg):
-        if self.log_callback: 
-            try: self.log_callback(msg)
-            except: print(msg)
-        else: print(msg)
+    def log(self, mensaje):
+        if self.callbackLog:
+            try:
+                self.callbackLog(mensaje)
+            except:
+                print(mensaje)
+        else:
+            print(mensaje)
 
-    def cargar_referencias_async(self):
-        thread = threading.Thread(target=self._load_references)
-        thread.daemon = True
-        thread.start()
+    def cargarReferenciasAsync(self):
+        hilo = threading.Thread(target=self._procesarCargaOptimizada)
+        hilo.daemon = True
+        hilo.start()
 
-    def _load_references(self):
-        self.is_loading = True
-        
-        # Enviamos -1 para decir "Cargando Motor"
-        if self.progress_callback: self.progress_callback(-1, 100, "Iniciando Motor...")
-        
-        self.log(f"IA: Iniciando motor {self.detector_backend} (esto toma tiempo)...")
-        
-        if not os.path.exists(self.output_dir):
-            self.log("IA: Carpeta destino no existe.")
-            self.is_loading = False
+    def esRostroVisible(self, rutaImagen):
+        """Verifica que exista un rostro claro en la imagen con alta confianza"""
+        try:
+            rostros = DeepFace.extract_faces(
+                img_path=rutaImagen,
+                detector_backend=self.backendDetector,
+                enforce_detection=True
+            )
+
+            if rostros and len(rostros) > 0:
+                confianza = rostros[0].get('confidence', 0)
+                if confianza >= self.umbralConfianza:
+                    return True
+        except Exception:
+            pass
+
+        return False
+
+    def esRostroValido(self, rutaImagen):
+        """Verifica que exista un rostro claro en la imagen."""
+        try:
+            rostros = DeepFace.extract_faces(
+                img_path=rutaImagen,
+                detector_backend='opencv',
+                enforce_detection=True
+            )
+            return len(rostros) > 0
+        except Exception:
+            return False
+
+    def reentrenarCarpeta(self, nombrePersona):
+        """Purga las referencias de una persona y vuelve a escanear su directorio."""
+        if nombrePersona in self.knownEmbeddings:
+            del self.knownEmbeddings[nombrePersona]
+
+        self.knownEmbeddings[nombrePersona] = []
+        directorioPersona = os.path.join(self.directorioSalida, nombrePersona)
+
+        if not os.path.exists(directorioPersona):
             return
 
-        # Contar Personas (Carpetas)
-        personas = [p for p in os.listdir(self.output_dir) if os.path.isdir(os.path.join(self.output_dir, p))]
-        total_personas = len(personas)
-        
-        # Empezamos el proceso lineal
-        for i, person_name in enumerate(personas):
-            if self.progress_callback: 
-                self.progress_callback(i, total_personas, f"Aprendiendo: {person_name}")
+        archivosValidos = [f for f in os.listdir(directorioPersona) if not f.startswith('.') and not f.startswith('._')]
+        imagenesCargadas = 0
 
-            person_dir = os.path.join(self.output_dir, person_name)
-            self.known_embeddings[person_name] = []
-            
-            images_loaded = 0
-            # Cargar imágenes de esta persona
-            for img_name in os.listdir(person_dir):
-                if img_name.lower().endswith(('.jpg', '.png', '.jpeg')):
-                    img_path = os.path.join(person_dir, img_name)
-                    try:
-                        embedding_objs = DeepFace.represent(
-                            img_path=img_path,
-                            model_name=self.model_name,
-                            enforce_detection=True,
-                            detector_backend=self.detector_backend
-                        )
-                        embedding = embedding_objs[0]["embedding"]
-                        self.known_embeddings[person_name].append(embedding)
-                        images_loaded += 1
-                    except Exception:
-                        pass
-                    if images_loaded >= 5: break
-            
-            if images_loaded > 0:
-                self.log(f"IA: Aprendido -> {person_name}")
-            
-        self.is_loading = False
-        self.log(f"IA: Carga Finalizada. {total_personas} personas listas.")
-        
-        # Forzar 100% al final
-        if self.progress_callback: self.progress_callback(total_personas, total_personas, "IA Activa")
+        for nombreArchivo in archivosValidos:
+            if imagenesCargadas >= 5:  # Tu límite definido
+                break
 
-    def find_cosine_distance(self, source_representation, test_representation):
-        a = np.matmul(np.transpose(source_representation), test_representation)
-        b = np.sum(np.multiply(source_representation, source_representation))
-        c = np.sum(np.multiply(test_representation, test_representation))
+            rutaImagen = os.path.join(directorioPersona, nombreArchivo)
+
+            if self.esRostroValido(rutaImagen):
+                try:
+                    representacion = DeepFace.represent(
+                        img_path=rutaImagen,
+                        model_name=self.nombreModelo,
+                        enforce_detection=True,
+                        detector_backend=self.backendDetector
+                    )
+                    self.knownEmbeddings[nombrePersona].append(representacion[0]["embedding"])
+                    imagenesCargadas += 1
+                except Exception:
+                    pass
+
+        self._guardarCache()
+
+    def extraerFotogramasVideo(self, rutaVideo):
+        rutasTemporales = []
+        try:
+            captura = cv2.VideoCapture(rutaVideo)
+            totalFotogramas = int(captura.get(cv2.CAP_PROP_FRAME_COUNT))
+
+            puntosExtraccion = [
+                int(totalFotogramas * 0.2),
+                int(totalFotogramas * 0.5),
+                int(totalFotogramas * 0.8)
+            ]
+
+            for punto in puntosExtraccion:
+                captura.set(cv2.CAP_PROP_POS_FRAMES, punto)
+                exito, fotograma = captura.read()
+
+                if exito:
+                    rutaTemporal = os.path.join(tempfile.gettempdir(), f"temp_{uuid.uuid4().hex}.jpg")
+                    cv2.imwrite(rutaTemporal, fotograma)
+                    rutasTemporales.append(rutaTemporal)
+
+            captura.release()
+        except Exception as error:
+            self.log(f"Error procesando video {error}")
+
+        return rutasTemporales
+
+    def _procesarCargaOptimizada(self):
+        self.estaCargando = True
+
+        if self.callbackProgreso:
+            self.callbackProgreso(-1, 100, "Iniciando Motor")
+
+        if not os.path.exists(self.directorioSalida):
+            self.log("Carpeta destino no existe")
+            self.estaCargando = False
+            return
+
+        if os.path.exists(self.archivoCache):
+            try:
+                with open(self.archivoCache, "rb") as archivo:
+                    self.knownEmbeddings = pickle.load(archivo)
+
+                self.log("Cache de memoria cargada")
+                if self.callbackProgreso:
+                    self.callbackProgreso(100, 100, "Inteligencia Activa")
+
+                self.estaCargando = False
+                return
+            except Exception as error:
+                self.log(f"Error leyendo cache recalculando {error}")
+
+        self.log(f"Iniciando motor {self.backendDetector}")
+
+        personas = [p for p in os.listdir(self.directorioSalida) if
+                    os.path.isdir(os.path.join(self.directorioSalida, p))]
+        totalPersonas = len(personas)
+
+        for i, nombrePersona in enumerate(personas):
+            if self.callbackProgreso:
+                self.callbackProgreso(i, totalPersonas, f"Aprendiendo {nombrePersona}")
+
+            directorioPersona = os.path.join(self.directorioSalida, nombrePersona)
+            self.knownEmbeddings[nombrePersona] = []
+
+            imagenesCargadas = 0
+            for nombreArchivo in os.listdir(directorioPersona):
+                if nombreArchivo.startswith('.') or nombreArchivo.startswith('._'):
+                    continue
+
+                rutaArchivo = os.path.join(directorioPersona, nombreArchivo)
+                esImagen = nombreArchivo.lower().endswith(('.jpg', '.png', '.jpeg'))
+                esVideo = nombreArchivo.lower().endswith(('.mp4', '.avi', '.mov', '.mkv'))
+
+                if not (esImagen or esVideo):
+                    continue
+
+                rutasAProcesar = [rutaArchivo] if esImagen else self.extraerFotogramasVideo(rutaArchivo)
+
+                for ruta in rutasAProcesar:
+                    if imagenesCargadas >= 5:
+                        break
+
+                    if self.esRostroVisible(ruta):
+                        try:
+                            representacion = DeepFace.represent(
+                                img_path=ruta,
+                                model_name=self.nombreModelo,
+                                enforce_detection=True,
+                                detector_backend=self.backendDetector
+                            )
+                            embedding = representacion[0]["embedding"]
+                            self.knownEmbeddings[nombrePersona].append(embedding)
+                            imagenesCargadas += 1
+                        except Exception:
+                            pass
+
+                if esVideo:
+                    for rutaTemp in rutasAProcesar:
+                        if os.path.exists(rutaTemp):
+                            try:
+                                os.remove(rutaTemp)
+                            except Exception:
+                                pass
+
+                if imagenesCargadas >= 5:
+                    break
+
+            if imagenesCargadas > 0:
+                self.log(f"Aprendido {nombrePersona}")
+
+        self._guardarCache()
+
+        self.estaCargando = False
+        self.log(f"Carga Finalizada")
+
+        if self.callbackProgreso:
+            self.callbackProgreso(totalPersonas, totalPersonas, "Inteligencia Activa")
+
+    def _guardarCache(self):
+        """Actualiza el archivo fisico de cache de forma segura"""
+        try:
+            with open(self.archivoCache, "wb") as archivo:
+                pickle.dump(self.knownEmbeddings, archivo)
+            self.log("Memoria actualizada en cache")
+        except Exception as error:
+            self.log(f"Error al guardar cache {error}")
+
+    def calcularDistanciaCoseno(self, representacionOrigen, representacionPrueba):
+        a = np.matmul(np.transpose(representacionOrigen), representacionPrueba)
+        b = np.sum(np.multiply(representacionOrigen, representacionOrigen))
+        c = np.sum(np.multiply(representacionPrueba, representacionPrueba))
         return 1 - (a / (np.sqrt(b) * np.sqrt(c)))
 
-    def sugerir_persona(self, image_path):
-        if self.is_loading: return "Cargando Motor..."
-        if not self.known_embeddings: return "Sin Referencias"
+    def sugerirPersona(self, rutaImagen):
+        if self.estaCargando: return "Cargando Motor"
+        if not self.knownEmbeddings: return "Sin Referencias"
 
         try:
-            target_objs = DeepFace.represent(
-                img_path=image_path,
-                model_name=self.model_name,
+            objetivo = DeepFace.represent(
+                img_path=rutaImagen,
+                model_name=self.nombreModelo,
                 enforce_detection=True,
-                detector_backend=self.detector_backend
+                detector_backend=self.backendDetector
             )
-            target_embedding = target_objs[0]["embedding"]
+            embeddingObjetivo = objetivo[0]["embedding"]
         except:
             return "Rostro no visible"
 
-        best_match = None
-        min_distance = float('inf')
+        mejorCoincidencia = None
+        distanciaMinima = float('inf')
 
-        for name, embeddings_list in self.known_embeddings.items():
-            for ref_embedding in embeddings_list:
-                distance = self.find_cosine_distance(target_embedding, ref_embedding)
-                if distance < min_distance:
-                    min_distance = distance
-                    best_match = name
+        for nombre, listaEmbeddings in self.knownEmbeddings.items():
+            for embeddingReferencia in listaEmbeddings:
+                distancia = self.calcularDistanciaCoseno(embeddingObjetivo, embeddingReferencia)
+                if distancia < distanciaMinima:
+                    distanciaMinima = distancia
+                    mejorCoincidencia = nombre
 
-        if min_distance < self.threshold:
-            confianza = round((1 - min_distance) * 100, 1)
-            return f"{best_match} ({confianza}%)"
-        else:
-            return f"Desconocido"
+        if distanciaMinima < self.umbral:
+            confianza = round((1 - distanciaMinima) * 100, 1)
+            return f"{mejorCoincidencia} ({confianza}%)"
+
+        return "Desconocido"
+
+    def agregarImagenReferencia(self, nombrePersona, rutaImagen):
+        """Calcula el embedding de la nueva imagen si cumple con la calidad y lo agrega a la memoria"""
+        if nombrePersona not in self.knownEmbeddings:
+            self.knownEmbeddings[nombrePersona] = []
+
+        if len(self.knownEmbeddings[nombrePersona]) >= 5:
+            return
+
+        if not self.esRostroVisible(rutaImagen):
+            self.log(f"Imagen ignorada por baja calidad {rutaImagen}")
+            return
+
+        try:
+            representacion = DeepFace.represent(
+                img_path=rutaImagen,
+                model_name=self.nombreModelo,
+                enforce_detection=True,
+                detector_backend=self.backendDetector
+            )
+
+            if representacion and len(representacion) > 0:
+                nuevoEmbedding = representacion[0]["embedding"]
+                self.knownEmbeddings[nombrePersona].append(nuevoEmbedding)
+                self.log(f"Nuevo rostro aprendido para {nombrePersona}")
+                self._guardarCache()
+
+        except Exception as error:
+            self.log(f"Error al intentar aprender rostro {error}")
+
+    def reentrenarPersona(self, nombrePersona, rutaCarpeta):
+        """Borra la memoria de una persona y recalcula sus referencias con filtro de calidad"""
+        self.log(f"Reevaluando referencias para {nombrePersona}")
+
+        self.knownEmbeddings[nombrePersona] = []
+
+        archivos = [f for f in os.listdir(rutaCarpeta) if
+                    f.lower().endswith(('.jpg', '.png', '.jpeg')) and not f.startswith('._')]
+        imagenesCargadas = 0
+
+        for nombreImagen in archivos:
+            if imagenesCargadas >= 5:
+                break
+
+            rutaImagen = os.path.join(rutaCarpeta, nombreImagen)
+
+            if self.esRostroVisible(rutaImagen):
+                try:
+                    representacion = DeepFace.represent(
+                        img_path=rutaImagen,
+                        model_name=self.nombreModelo,
+                        enforce_detection=True,
+                        detector_backend=self.backendDetector
+                    )
+                    if representacion and len(representacion) > 0:
+                        self.knownEmbeddings[nombrePersona].append(representacion[0]["embedding"])
+                        imagenesCargadas += 1
+                except Exception:
+                    pass
+
+        self.log(f"Persona reentrenada con imagenes validas")
+        self._guardarCache()
