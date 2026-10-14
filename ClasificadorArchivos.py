@@ -1281,7 +1281,7 @@ class Clasificador:
             if hasattr(self, 'ia') and self.ia and extension in self.imagenValida:
                 # Usar un hilo secundario para evitar que la interfaz se congele
                 threading.Thread(
-                    target=self.ia.agregar_imagen_referencia,
+                    target=self.ia.agregarImagenReferencia,
                     args=(carpeta, destino),
                     daemon=True
                 ).start()
